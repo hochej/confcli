@@ -16,8 +16,10 @@ Download the latest release for your platform from
 ```bash
 # macOS / Linux
 chmod +x confcli
-sudo mv confcli /usr/local/bin/
+mv confcli ~/.local/bin/
 ```
+
+> Make sure `~/.local/bin` is in your `PATH`.
 
 ### Cargo
 
