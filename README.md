@@ -29,14 +29,18 @@ cargo install confcli
 
 ### Shell Completions
 
+Bash:
 ```bash
-# Bash
 confcli completions bash > /usr/local/etc/bash_completion.d/confcli
+```
 
-# Zsh
+Zsh:
+```bash
 confcli completions zsh > ~/.zsh/completions/_confcli
+```
 
-# Fish
+Fish:
+```bash
 confcli completions fish > ~/.config/fish/completions/confcli.fish
 ```
 
