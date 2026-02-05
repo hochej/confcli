@@ -71,6 +71,17 @@ Before committing and pushing, always check whether your changes require updates
 
 These files must never drift from the actual code. If you add a new command, it must appear in all four. If you rename a flag, update all references.
 
+## Release verification
+
+A release is **not complete** until all of the following are confirmed:
+
+1. **Watch the CI run** — after pushing the tag, monitor the GitHub Actions workflow and verify it succeeds.
+2. **Check the release page** — confirm the release appears on GitHub Releases with the correct tag and changelog.
+3. **Download the binary** — download the released binary for the current platform.
+4. **Smoke test** — run the downloaded binary (`confcli --version`, `confcli --help`, and at least one live command like `confcli space list`) to verify it works.
+
+Only when all four steps pass is the release considered successful. If any step fails, fix the issue, bump the version, and release again.
+
 ## Common pitfalls
 
 - Empty strings pass `str::chars().all(...)` checks (vacuous truth) — always guard with `!s.is_empty()`.
