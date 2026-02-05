@@ -5,6 +5,7 @@ use std::io;
 mod cli;
 mod commands;
 mod context;
+mod download;
 mod helpers;
 mod resolve;
 
@@ -28,6 +29,10 @@ async fn main() -> Result<()> {
         Commands::Search(cmd) => commands::search::handle(&ctx, cmd).await,
         Commands::Attachment(cmd) => commands::attachment::handle(&ctx, cmd).await,
         Commands::Label(cmd) => commands::label::handle(&ctx, cmd).await,
+        Commands::Comment(cmd) => commands::comment::handle(&ctx, cmd).await,
+        Commands::Export(args) => commands::export::handle(&ctx, args).await,
+        #[cfg(feature = "write")]
+        Commands::CopyTree(args) => commands::copy_tree::handle(&ctx, args).await,
         Commands::Completions(args) => generate_completions(args),
     };
 

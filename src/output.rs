@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::ValueEnum;
-use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
+use comfy_table::{presets::NOTHING, Attribute, Cell, ContentArrangement, Table};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
@@ -34,11 +34,59 @@ pub fn print_table(headers: &[&str], rows: Vec<Vec<String>>) {
     }
     let mut table = Table::new();
     table
-        .load_preset(UTF8_FULL)
+        .load_preset(NOTHING)
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(headers.to_vec());
+        .set_header(
+            headers
+                .iter()
+                .map(|h| Cell::new(h).add_attribute(Attribute::Bold))
+                .collect::<Vec<_>>(),
+        );
     for row in rows {
         table.add_row(row);
     }
-    println!("{table}");
+    if let Some(col) = table.column_mut(0) {
+        col.set_padding((0, 1));
+    }
+    print_trimmed(&table);
+}
+
+pub fn print_table_with_count(headers: &[&str], rows: Vec<Vec<String>>) {
+    let count = rows.len();
+    print_table(headers, rows);
+    if count > 0 {
+        let label = if count == 1 { "result" } else { "results" };
+        println!("\x1b[2m{count} {label}\x1b[0m");
+    }
+}
+
+pub fn print_kv(rows: Vec<Vec<String>>) {
+    if rows.is_empty() {
+        return;
+    }
+    let mut table = Table::new();
+    table
+        .load_preset(NOTHING)
+        .set_content_arrangement(ContentArrangement::Dynamic);
+    for row in rows {
+        let mut cells = row.into_iter();
+        let mut cell_row = Vec::new();
+        if let Some(key) = cells.next() {
+            cell_row.push(Cell::new(key).add_attribute(Attribute::Bold));
+        }
+        for val in cells {
+            cell_row.push(Cell::new(val));
+        }
+        table.add_row(cell_row);
+    }
+    if let Some(col) = table.column_mut(0) {
+        col.set_padding((0, 1));
+    }
+    print_trimmed(&table);
+}
+
+fn print_trimmed(table: &Table) {
+    for line in table.to_string().lines() {
+        println!("{}", line.trim_end());
+    }
 }

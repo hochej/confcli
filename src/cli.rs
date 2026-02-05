@@ -6,8 +6,7 @@ use std::path::PathBuf;
 #[command(
     name = "confcli",
     version,
-    about = "Confluence Cloud CLI (v2-first)",
-    long_about = "A fast CLI for Confluence Cloud with v2-first APIs and v1 fallbacks for search, labels, and uploads.",
+    about = "A scrappy little Confluence CLI for you and your clanker",
     after_help = "EXAMPLES:\n  confcli auth login --domain yourcompany.atlassian.net --email you@example.com --token <token>\n  confcli space list --all\n  confcli space pages MFS --tree\n  confcli page get MFS:Overview\n  confcli search \"confluence\"\n  echo '<p>Hello</p>' | confcli page create --space MFS --title Hello --body-file -\n"
 )]
 pub struct Cli {
@@ -30,16 +29,23 @@ pub struct Cli {
 pub enum Commands {
     #[command(subcommand, about = "Manage authentication")]
     Auth(AuthCommand),
-    #[command(subcommand, about = "Work with spaces")]
+    #[command(subcommand, about = "List and inspect spaces")]
     Space(SpaceCommand),
-    #[command(subcommand, about = "Work with pages")]
+    #[command(subcommand, about = "List, view, create, and manage pages")]
     Page(PageCommand),
     #[command(about = "Search content (CQL or plain text)")]
     Search(SearchCommand),
-    #[command(subcommand, about = "Work with attachments")]
+    #[command(subcommand, about = "List, download, upload, and manage attachments")]
     Attachment(AttachmentCommand),
-    #[command(subcommand, about = "Work with labels")]
+    #[command(subcommand, about = "List, add, and remove page labels")]
     Label(LabelCommand),
+    #[command(subcommand, about = "List, add, and delete comments")]
+    Comment(CommentCommand),
+    #[command(about = "Export a page and its attachments to a folder")]
+    Export(ExportArgs),
+    #[cfg(feature = "write")]
+    #[command(about = "Copy a page tree to a new parent")]
+    CopyTree(CopyTreeArgs),
     #[command(about = "Generate shell completions")]
     Completions(CompletionsArgs),
 }
@@ -76,7 +82,7 @@ pub struct AuthLoginArgs {
     #[arg(
         long,
         env = "CONFLUENCE_DOMAIN",
-        help = "Confluence domain (e.g. yourcompany.atlassian.net)"
+        help = "Confluence site URL or domain (e.g. yourcompany.atlassian.net or https://yourcompany.atlassian.net/wiki)"
     )]
     pub domain: Option<String>,
     #[arg(long, env = "CONFLUENCE_EMAIL", help = "Email address for basic auth")]
@@ -85,9 +91,17 @@ pub struct AuthLoginArgs {
         long,
         env = "CONFLUENCE_TOKEN",
         hide_env_values = true,
-        help = "API token for basic auth"
+        help = "API token for basic auth (also accepts CONFLUENCE_API_TOKEN)"
     )]
     pub token: Option<String>,
+    #[arg(
+        long,
+        env = "CONFLUENCE_API_PATH",
+        help = "Override v1 API path (e.g. /wiki/rest/api or /rest/api)"
+    )]
+    pub api_path: Option<String>,
+    #[arg(long, help = "Override v2 API path (e.g. /wiki/api/v2 or /api/v2)")]
+    pub api_v2_path: Option<String>,
     #[arg(
         long,
         env = "CONFLUENCE_BEARER_TOKEN",
@@ -127,7 +141,7 @@ pub struct SpaceListArgs {
         short = 'n',
         long,
         default_value = "50",
-        help = "Page size for pagination"
+        help = "Maximum number of results"
     )]
     pub limit: usize,
 }
@@ -160,7 +174,7 @@ pub struct SpacePagesArgs {
         short = 'n',
         long,
         default_value = "50",
-        help = "Page size for pagination"
+        help = "Maximum number of results"
     )]
     pub limit: usize,
 }
@@ -175,6 +189,9 @@ pub enum PageCommand {
     Get(PageGetArgs),
     #[command(about = "Show only the page body (markdown by default)")]
     Body(PageBodyArgs),
+    #[cfg(feature = "write")]
+    #[command(about = "Edit a page body in $EDITOR")]
+    Edit(PageEditArgs),
     #[cfg(feature = "write")]
     #[command(about = "Create a page")]
     Create(PageCreateArgs),
@@ -208,7 +225,7 @@ pub struct PageListArgs {
         short = 'n',
         long,
         default_value = "50",
-        help = "Page size for pagination"
+        help = "Maximum number of results"
     )]
     pub limit: usize,
 }
@@ -227,7 +244,7 @@ pub struct PageGetArgs {
     pub version: Option<i64>,
     #[arg(long, help = "Preserve empty list items in markdown output")]
     pub keep_empty_list_items: bool,
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Markdown, help = "Output format: markdown, json, or table")]
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: table, json, or markdown")]
     pub output: OutputFormat,
 }
 
@@ -243,6 +260,23 @@ pub struct PageBodyArgs {
         help = "Body format: markdown, view, storage, atlas_doc_format, adf"
     )]
     pub format: String,
+}
+
+#[cfg(feature = "write")]
+#[derive(Args, Debug)]
+pub struct PageEditArgs {
+    #[arg(help = "Page id, URL, or SPACE:Title")]
+    pub page: String,
+    #[arg(
+        long,
+        default_value = "storage",
+        help = "Body format to edit: storage or atlas_doc_format (adf)"
+    )]
+    pub format: String,
+    #[arg(long, help = "Show a diff and prompt before saving")]
+    pub diff: bool,
+    #[arg(short = 'y', long, help = "Skip confirmation prompt")]
+    pub yes: bool,
 }
 
 #[cfg(feature = "write")]
@@ -324,7 +358,7 @@ pub struct PageChildrenArgs {
         short = 'n',
         long,
         default_value = "50",
-        help = "Page size for pagination"
+        help = "Maximum number of results"
     )]
     pub limit: usize,
 }
@@ -354,7 +388,7 @@ pub struct PageOpenArgs {
 
 #[derive(Args, Debug)]
 #[command(
-    about = "Search content with CQL (defaults to text search)",
+    about = "Search content (CQL or plain text)",
     after_help = "EXAMPLES:\n  confcli search \"confluence\"\n  confcli search \"type=page AND title ~ \\\"Template\\\"\"\n"
 )]
 pub struct SearchCommand {
@@ -370,7 +404,7 @@ pub struct SearchCommand {
         short = 'n',
         long,
         default_value = "50",
-        help = "Page size for pagination"
+        help = "Maximum number of results"
     )]
     pub limit: usize,
 }
@@ -386,7 +420,7 @@ pub enum AttachmentCommand {
     #[command(about = "Download an attachment")]
     Download(AttachmentDownloadArgs),
     #[cfg(feature = "write")]
-    #[command(about = "Upload an attachment (v1 endpoint)")]
+    #[command(about = "Upload an attachment")]
     Upload(AttachmentUploadArgs),
     #[cfg(feature = "write")]
     #[command(about = "Delete an attachment")]
@@ -405,7 +439,7 @@ pub struct AttachmentListArgs {
         short = 'n',
         long,
         default_value = "50",
-        help = "Page size for pagination"
+        help = "Maximum number of results"
     )]
     pub limit: usize,
 }
@@ -422,8 +456,8 @@ pub struct AttachmentGetArgs {
 pub struct AttachmentDownloadArgs {
     #[arg(help = "Attachment id")]
     pub attachment: String,
-    #[arg(short, long, help = "Output path")]
-    pub output: Option<PathBuf>,
+    #[arg(long, help = "Destination file path")]
+    pub dest: Option<PathBuf>,
 }
 
 #[cfg(feature = "write")]
@@ -457,12 +491,12 @@ pub enum LabelCommand {
     #[command(about = "List labels")]
     List(LabelListArgs),
     #[cfg(feature = "write")]
-    #[command(about = "Add a label to a page (v1 endpoint)")]
+    #[command(about = "Add a label to a page")]
     Add(LabelAddArgs),
     #[cfg(feature = "write")]
-    #[command(about = "Remove a label from a page (v1 endpoint)")]
+    #[command(about = "Remove a label from a page")]
     Remove(LabelRemoveArgs),
-    #[command(about = "List pages with a label (v1 search)")]
+    #[command(about = "List pages with a label")]
     Pages(LabelPagesArgs),
 }
 
@@ -476,7 +510,7 @@ pub struct LabelListArgs {
         short = 'n',
         long,
         default_value = "50",
-        help = "Page size for pagination"
+        help = "Maximum number of results"
     )]
     pub limit: usize,
 }
@@ -511,7 +545,135 @@ pub struct LabelPagesArgs {
         short = 'n',
         long,
         default_value = "50",
-        help = "Page size for pagination"
+        help = "Maximum number of results"
     )]
     pub limit: usize,
+}
+
+// --- Comment ---
+
+#[derive(Subcommand, Debug)]
+pub enum CommentCommand {
+    #[command(about = "List comments on a page")]
+    List(CommentListArgs),
+    #[cfg(feature = "write")]
+    #[command(about = "Add a comment to a page")]
+    Add(CommentAddArgs),
+    #[cfg(feature = "write")]
+    #[command(about = "Delete a comment")]
+    Delete(CommentDeleteArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct CommentListArgs {
+    #[arg(help = "Page id, URL, or SPACE:Title")]
+    pub page: String,
+    #[arg(
+        long,
+        help = "Filter by location: footer, inline, resolved (comma-separated)"
+    )]
+    pub location: Option<String>,
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    pub output: OutputFormat,
+    #[arg(short = 'a', long, help = "Fetch all pages of results")]
+    pub all: bool,
+    #[arg(short = 'n', long, default_value = "25", help = "Maximum number of results")]
+    pub limit: usize,
+}
+
+#[cfg(feature = "write")]
+#[derive(Args, Debug)]
+pub struct CommentAddArgs {
+    #[arg(help = "Page id, URL, or SPACE:Title")]
+    pub page: String,
+    #[arg(long, help = "Reply to an existing comment id")]
+    pub parent: Option<String>,
+    #[arg(long, help = "Comment location: footer or inline")]
+    pub location: Option<String>,
+    #[arg(
+        long,
+        help = "Inline properties JSON for inline comments (best-effort)"
+    )]
+    pub inline_properties: Option<String>,
+    #[arg(long, help = "Path to body file, or '-' to read from stdin")]
+    pub body_file: Option<PathBuf>,
+    #[arg(long, help = "Inline body content (for small comments)")]
+    pub body: Option<String>,
+    #[arg(
+        long,
+        default_value = "storage",
+        help = "Body format: storage, html, markdown"
+    )]
+    pub body_format: String,
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    pub output: OutputFormat,
+}
+
+#[cfg(feature = "write")]
+#[derive(Args, Debug)]
+pub struct CommentDeleteArgs {
+    #[arg(help = "Comment id")]
+    pub comment: String,
+    #[arg(short = 'y', long, help = "Skip confirmation prompt")]
+    pub yes: bool,
+}
+
+// --- Export ---
+
+#[derive(Args, Debug)]
+pub struct ExportArgs {
+    #[arg(help = "Page id, URL, or SPACE:Title")]
+    pub page: String,
+    #[arg(long, default_value = ".", help = "Destination directory")]
+    pub dest: PathBuf,
+    #[arg(long, default_value = "md", help = "Content format: md, storage, adf")]
+    pub format: String,
+    #[arg(long, help = "Only export attachments matching this glob (e.g. *.png)")]
+    pub pattern: Option<String>,
+    #[arg(long, help = "Skip downloading attachments")]
+    pub skip_attachments: bool,
+    #[arg(
+        long,
+        default_value = "4",
+        help = "Max concurrent attachment downloads"
+    )]
+    pub concurrency: usize,
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    pub output: OutputFormat,
+}
+
+// --- Copy Tree ---
+
+#[cfg(feature = "write")]
+#[derive(Args, Debug)]
+pub struct CopyTreeArgs {
+    #[arg(help = "Source page id, URL, or SPACE:Title")]
+    pub source: String,
+    #[arg(help = "Target parent page id, URL, or SPACE:Title")]
+    pub target_parent: String,
+    #[arg(help = "Optional new title for the root copy")]
+    pub new_title: Option<String>,
+    #[arg(
+        long,
+        default_value = " (Copy)",
+        help = "Suffix appended to copied page titles"
+    )]
+    pub copy_suffix: String,
+    #[arg(
+        long,
+        help = "Exclude pages whose titles match this glob (case-insensitive)"
+    )]
+    pub exclude: Option<String>,
+    #[arg(long, default_value = "0", help = "Max depth to copy (0 = unlimited)")]
+    pub max_depth: usize,
+    #[arg(long, default_value = "0", help = "Delay between create requests (ms)")]
+    pub delay_ms: u64,
+    #[arg(
+        long,
+        default_value = "8",
+        help = "Max concurrent fetches for source bodies"
+    )]
+    pub concurrency: usize,
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    pub output: OutputFormat,
 }

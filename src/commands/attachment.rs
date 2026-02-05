@@ -54,7 +54,7 @@ async fn attachment_list(
                     ]
                 })
                 .collect();
-            maybe_print_table(ctx, &["ID", "Title", "Type", "Size"], rows);
+            maybe_print_table_with_count(ctx, &["ID", "Title", "Type", "Size"], rows);
             Ok(())
         }
         OutputFormat::Markdown => markdown_not_supported(),
@@ -80,7 +80,7 @@ async fn attachment_get(
                     human_size(json.get("fileSize").and_then(|v| v.as_i64()).unwrap_or(0)),
                 ],
             ];
-            maybe_print_table(ctx, &["Field", "Value"], rows);
+            maybe_print_kv(ctx, rows);
             Ok(())
         }
         OutputFormat::Markdown => markdown_not_supported(),
@@ -117,7 +117,7 @@ async fn attachment_download(
         return Err(anyhow::anyhow!("Download failed: {}", response.status()));
     }
     let total = response.content_length();
-    let file_name = resolve_download_path(&args.output, &json)?;
+    let file_name = resolve_download_path(&args.dest, &json)?;
     let mut file = tokio::fs::File::create(&file_name).await?;
     let mut stream = response.bytes_stream();
 
@@ -202,7 +202,7 @@ async fn attachment_upload(
                 vec!["ID".to_string(), json_str(&attachment, "id")],
                 vec!["Title".to_string(), json_str(&attachment, "title")],
             ];
-            maybe_print_table(ctx, &["Field", "Value"], rows);
+            maybe_print_kv(ctx, rows);
             Ok(())
         }
         OutputFormat::Markdown => markdown_not_supported(),

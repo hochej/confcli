@@ -5,7 +5,10 @@ use confcli::output::OutputFormat;
 
 use crate::cli::{SpaceCommand, SpaceGetArgs, SpaceListArgs, SpacePagesArgs};
 use crate::context::AppContext;
-use crate::helpers::{markdown_not_supported, maybe_print_json, maybe_print_table, url_with_query};
+use crate::helpers::{
+    markdown_not_supported, maybe_print_json, maybe_print_kv, maybe_print_table_with_count,
+    url_with_query,
+};
 use crate::resolve::{build_page_tree, resolve_space_id};
 
 pub async fn handle(ctx: &AppContext, cmd: SpaceCommand) -> Result<()> {
@@ -48,7 +51,7 @@ async fn space_list(client: &ApiClient, ctx: &AppContext, args: SpaceListArgs) -
                     ]
                 })
                 .collect();
-            maybe_print_table(ctx, &["ID", "Key", "Name", "Type", "Status"], rows);
+            maybe_print_table_with_count(ctx, &["ID", "Key", "Name", "Type", "Status"], rows);
             Ok(())
         }
         OutputFormat::Markdown => markdown_not_supported(),
@@ -69,7 +72,7 @@ async fn space_get(client: &ApiClient, ctx: &AppContext, args: SpaceGetArgs) -> 
                 vec!["Type".to_string(), json_str(&json, "type")],
                 vec!["Status".to_string(), json_str(&json, "status")],
             ];
-            maybe_print_table(ctx, &["Field", "Value"], rows);
+            maybe_print_kv(ctx, rows);
             Ok(())
         }
         OutputFormat::Markdown => markdown_not_supported(),
@@ -115,7 +118,7 @@ async fn space_pages(client: &ApiClient, ctx: &AppContext, args: SpacePagesArgs)
                         ]
                     })
                     .collect();
-                maybe_print_table(ctx, &["ID", "Title", "Status", "Parent"], rows);
+                maybe_print_table_with_count(ctx, &["ID", "Title", "Status", "Parent"], rows);
                 Ok(())
             }
             OutputFormat::Markdown => markdown_not_supported(),

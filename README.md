@@ -110,7 +110,7 @@ confcli search "confluence" --space MFS           # Search within space
 
 ```bash
 confcli attachment list --page MFS:Overview
-confcli attachment download att12345 -o file.png
+confcli attachment download att12345 --dest file.png
 confcli attachment upload MFS:Overview ./image.png
 confcli attachment delete att12345
 ```
@@ -122,6 +122,37 @@ confcli label list
 confcli label add MFS:Overview "important"
 confcli label remove MFS:Overview "important"
 confcli label pages "important"        # Find pages with label
+```
+
+### Comments
+
+```bash
+confcli comment list MFS:Overview
+confcli comment add MFS:Overview --body "LGTM"
+confcli comment delete 123456
+```
+
+### Export
+
+```bash
+confcli export MFS:Overview --dest ./exports --format md
+confcli export MFS:Overview --dest ./exports --format storage --skip-attachments
+confcli export MFS:Overview --dest ./exports --pattern "*.png"
+```
+
+### Copy Tree
+
+```bash
+confcli copy-tree MFS:Overview MFS:TargetParent
+confcli copy-tree MFS:Overview MFS:TargetParent "Overview (Backup)" --exclude "*draft*"
+confcli --dry-run copy-tree MFS:Overview MFS:TargetParent
+```
+
+### Edit
+
+```bash
+confcli page edit MFS:Overview
+confcli page edit MFS:Overview --format adf --diff
 ```
 
 ### Output Formats
@@ -161,6 +192,10 @@ For CI/CD or shared environments, use environment variables instead of the confi
 export CONFLUENCE_DOMAIN=yourcompany.atlassian.net
 export CONFLUENCE_EMAIL=you@example.com
 export CONFLUENCE_TOKEN=<api-token>
+# Also accepted (compat with other CLIs):
+export CONFLUENCE_API_TOKEN=<api-token>
+# Override API path if your instance is weird/proxied or you're on Server/DC:
+export CONFLUENCE_API_PATH=/wiki/rest/api   # or /rest/api
 # Or for OAuth:
 export CONFLUENCE_BEARER_TOKEN=<bearer-token>
 ```

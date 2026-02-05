@@ -14,28 +14,48 @@ use std::path::Path;
 use std::time::Duration;
 #[cfg(feature = "write")]
 use tokio_util::io::ReaderStream;
+use url::Url;
 
 const MAX_ATTEMPTS: u32 = 3;
 const USER_AGENT: &str = concat!("confcli/", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug, Clone)]
 pub struct ApiClient {
-    base_url: String,
+    /// Web base URL (used for browser links, download links, etc).
+    site_url: String,
+    /// API base URL for Confluence REST v1.
+    api_base_v1: String,
+    /// API base URL for Confluence REST v2 (Cloud).
+    api_base_v2: String,
+    /// Scheme+host(+port), used for absolute URLs from pagination/link headers.
+    origin: String,
     auth: AuthMethod,
     http: HttpClient,
     verbose: u8,
 }
 
 impl ApiClient {
-    pub fn new(base_url: String, auth: AuthMethod, verbose: u8) -> Result<Self> {
-        let base_url = base_url.trim_end_matches('/').to_string();
+    pub fn new(
+        site_url: String,
+        api_base_v1: String,
+        api_base_v2: String,
+        auth: AuthMethod,
+        verbose: u8,
+    ) -> Result<Self> {
+        let site_url = site_url.trim_end_matches('/').to_string();
+        let api_base_v1 = api_base_v1.trim_end_matches('/').to_string();
+        let api_base_v2 = api_base_v2.trim_end_matches('/').to_string();
+        let origin = origin_from_url(&site_url)?;
         let http = HttpClient::builder()
             .user_agent(USER_AGENT)
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(60))
             .build()?;
         Ok(Self {
-            base_url,
+            site_url,
+            api_base_v1,
+            api_base_v2,
+            origin,
             auth,
             http,
             verbose,
@@ -43,7 +63,11 @@ impl ApiClient {
     }
 
     pub fn base_url(&self) -> &str {
-        &self.base_url
+        &self.site_url
+    }
+
+    pub fn origin_url(&self) -> &str {
+        &self.origin
     }
 
     pub fn http(&self) -> &HttpClient {
@@ -51,11 +75,11 @@ impl ApiClient {
     }
 
     pub fn v2_url(&self, path: &str) -> String {
-        format!("{}/api/v2{}", self.base_url, path)
+        format!("{}{}", self.api_base_v2, path)
     }
 
     pub fn v1_url(&self, path: &str) -> String {
-        format!("{}/rest/api{}", self.base_url, path)
+        format!("{}{}", self.api_base_v1, path)
     }
 
     pub fn apply_auth(&self, builder: reqwest::RequestBuilder) -> Result<reqwest::RequestBuilder> {
@@ -73,15 +97,15 @@ impl ApiClient {
 
     /// Parse a Retry-After header value (integer seconds), falling back to
     /// exponential backoff: 2^(attempt-1) seconds.
-    fn retry_wait(headers: &HeaderMap, attempt: u32) -> Duration {
+    pub fn retry_wait_from_headers(headers: &HeaderMap, attempt: u32) -> Duration {
         if let Some(val) = headers.get("retry-after") {
             if let Ok(s) = val.to_str() {
                 if let Ok(secs) = s.trim().parse::<u64>() {
-                    return Duration::from_secs(secs);
+                    return Duration::from_secs(secs) + jitter(Duration::from_millis(250));
                 }
             }
         }
-        Duration::from_secs(2u64.pow(attempt - 1))
+        Duration::from_secs(2u64.pow(attempt - 1)) + jitter(Duration::from_millis(250))
     }
 
     async fn send(&self, method: Method, url: String) -> Result<Response> {
@@ -103,6 +127,9 @@ impl ApiClient {
                 Ok(response) => {
                     if self.verbose > 1 {
                         eprintln!("<- {} ({:?})", response.status(), start.elapsed());
+                        if let Some(id) = request_id(response.headers()) {
+                            eprintln!("<- request-id: {id}");
+                        }
                     }
 
                     if response.status().is_success() {
@@ -112,7 +139,7 @@ impl ApiClient {
                     let status = response.status();
                     if attempts < MAX_ATTEMPTS && (status == 429 || status.is_server_error()) {
                         attempts += 1;
-                        let wait = Self::retry_wait(response.headers(), attempts);
+                        let wait = Self::retry_wait_from_headers(response.headers(), attempts);
                         if self.verbose > 0 {
                             eprintln!("Received {}, retrying in {:?}...", status, wait);
                         }
@@ -165,6 +192,9 @@ impl ApiClient {
                 Ok(response) => {
                     if self.verbose > 1 {
                         eprintln!("<- {} ({:?})", response.status(), start.elapsed());
+                        if let Some(id) = request_id(response.headers()) {
+                            eprintln!("<- request-id: {id}");
+                        }
                     }
 
                     if response.status().is_success() {
@@ -174,7 +204,7 @@ impl ApiClient {
                     let status = response.status();
                     if attempts < MAX_ATTEMPTS && (status == 429 || status.is_server_error()) {
                         attempts += 1;
-                        let wait = Self::retry_wait(response.headers(), attempts);
+                        let wait = Self::retry_wait_from_headers(response.headers(), attempts);
                         if self.verbose > 0 {
                             eprintln!("Received {}, retrying in {:?}...", status, wait);
                         }
@@ -229,7 +259,12 @@ impl ApiClient {
                 if next.starts_with("http") {
                     continue;
                 }
-                next_url = Some(format!("{}{}", self.base_url, next));
+                let joined = if next.starts_with('/') {
+                    format!("{}{}", self.origin, next)
+                } else {
+                    format!("{}/{}", self.origin.trim_end_matches('/'), next)
+                };
+                next_url = Some(joined);
             }
         }
         Ok(results)
@@ -294,4 +329,46 @@ impl ApiClient {
         }
         Ok(response.json::<Value>().await?)
     }
+}
+
+fn origin_from_url(site_url: &str) -> Result<String> {
+    let url = Url::parse(site_url)?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| anyhow::anyhow!("Invalid Confluence URL: missing host"))?;
+    let port = url.port().map(|p| format!(":{p}")).unwrap_or_default();
+    Ok(format!("{}://{}{}", url.scheme(), host, port))
+}
+
+fn jitter(max: Duration) -> Duration {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos() as u64;
+    let max_ms = max.as_millis() as u64;
+    if max_ms == 0 {
+        return Duration::from_millis(0);
+    }
+    let ms = nanos % max_ms;
+    Duration::from_millis(ms)
+}
+
+fn request_id(headers: &HeaderMap) -> Option<String> {
+    for key in [
+        "x-request-id",
+        "x-arequestid",
+        "x-trace-id",
+        "x-b3-traceid",
+        "traceparent",
+    ] {
+        if let Some(val) = headers.get(key) {
+            if let Ok(s) = val.to_str() {
+                let trimmed = s.trim();
+                if !trimmed.is_empty() {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+    }
+    None
 }

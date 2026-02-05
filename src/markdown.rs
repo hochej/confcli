@@ -1,5 +1,6 @@
 use anyhow::Result;
 use htmd::HtmlToMarkdown;
+use pulldown_cmark::{html, Options, Parser};
 use regex::Regex;
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -24,6 +25,22 @@ pub fn html_to_markdown_with_options(
 
 pub fn decode_unicode_escapes_str(input: &str) -> String {
     decode_unicode_escapes(input)
+}
+
+/// Best-effort conversion for sending markdown via endpoints that expect
+/// Confluence "storage" (XHTML-ish) bodies.
+///
+/// This is intentionally simple; Confluence-specific macros/extensions are out
+/// of scope.
+pub fn markdown_to_storage(markdown: &str) -> String {
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_TASKLISTS);
+    let parser = Parser::new_ext(markdown, options);
+    let mut out = String::new();
+    html::push_html(&mut out, parser);
+    out
 }
 
 fn preprocess_html(html: &str, base_url: &str) -> Result<String> {

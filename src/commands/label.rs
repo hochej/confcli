@@ -10,7 +10,9 @@ use crate::cli::*;
 use crate::context::AppContext;
 #[cfg(feature = "write")]
 use crate::helpers::print_line;
-use crate::helpers::{markdown_not_supported, maybe_print_json, maybe_print_table, url_with_query};
+use crate::helpers::{
+    markdown_not_supported, maybe_print_json, maybe_print_table_with_count, url_with_query,
+};
 #[cfg(feature = "write")]
 use crate::resolve::resolve_page_id;
 
@@ -45,7 +47,7 @@ async fn label_list(client: &ApiClient, ctx: &AppContext, args: LabelListArgs) -
                     ]
                 })
                 .collect();
-            maybe_print_table(ctx, &["ID", "Name", "Prefix"], rows);
+            maybe_print_table_with_count(ctx, &["ID", "Name", "Prefix"], rows);
             Ok(())
         }
         OutputFormat::Markdown => markdown_not_supported(),
@@ -110,7 +112,7 @@ async fn label_pages(client: &ApiClient, ctx: &AppContext, args: LabelPagesArgs)
                 .cloned()
                 .unwrap_or_default();
             let rows = results.iter().map(label_result_row).collect();
-            maybe_print_table(ctx, &["ID", "Type", "Title"], rows);
+            maybe_print_table_with_count(ctx, &["ID", "Type", "Title"], rows);
             Ok(())
         }
         OutputFormat::Markdown => markdown_not_supported(),

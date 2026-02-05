@@ -1,7 +1,7 @@
 #[cfg(feature = "write")]
 use anyhow::Context;
 use anyhow::Result;
-use confcli::output::{print_json, print_table};
+use confcli::output::{print_json, print_kv, print_table_with_count};
 use humansize::{format_size, BINARY};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -16,11 +16,18 @@ pub fn maybe_print_json<T: serde::Serialize>(ctx: &AppContext, value: &T) -> Res
     print_json(value)
 }
 
-pub fn maybe_print_table(ctx: &AppContext, headers: &[&str], rows: Vec<Vec<String>>) {
+pub fn maybe_print_table_with_count(ctx: &AppContext, headers: &[&str], rows: Vec<Vec<String>>) {
     if ctx.quiet {
         return;
     }
-    print_table(headers, rows);
+    print_table_with_count(headers, rows);
+}
+
+pub fn maybe_print_kv(ctx: &AppContext, rows: Vec<Vec<String>>) {
+    if ctx.quiet {
+        return;
+    }
+    print_kv(rows);
 }
 
 pub fn print_line(ctx: &AppContext, message: &str) {
@@ -120,6 +127,14 @@ pub fn derive_title_from_file(body_file: Option<&PathBuf>) -> Option<String> {
     path.file_stem()
         .and_then(|s| s.to_str())
         .map(|s| s.to_string())
+}
+
+pub fn format_timestamp(s: &str) -> String {
+    if s.len() >= 16 {
+        s[..16].replace('T', " ")
+    } else {
+        s.to_string()
+    }
 }
 
 pub fn open_url(url: &str) -> Result<()> {

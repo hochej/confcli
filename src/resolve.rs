@@ -5,6 +5,9 @@ use std::collections::HashMap;
 use url::Url;
 
 use crate::helpers::url_with_query;
+use std::sync::{Mutex, OnceLock};
+
+static SPACE_KEY_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
 pub async fn resolve_page_id(client: &ApiClient, page: &str) -> Result<String> {
     if page.chars().all(|c| c.is_ascii_digit()) {
@@ -30,7 +33,7 @@ pub async fn resolve_page_id(client: &ApiClient, page: &str) -> Result<String> {
             .first()
             .and_then(|item| item.get("id"))
             .and_then(|v| v.as_str())
-            .context("Page not found")?;
+            .with_context(|| format!("Page '{title}' not found in space {space}"))?;
         return Ok(id.to_string());
     }
     Err(anyhow::anyhow!(
@@ -48,18 +51,32 @@ pub async fn resolve_space_id(client: &ApiClient, space: &str) -> Result<String>
         .first()
         .and_then(|item| item.get("id"))
         .and_then(|v| v.as_str())
-        .context("Space not found")?;
+        .with_context(|| format!("Space '{space}' not found"))?;
     Ok(id.to_string())
 }
 
 pub async fn resolve_space_key(client: &ApiClient, space_id: &str) -> Result<String> {
+    if let Some(cache) = SPACE_KEY_CACHE.get() {
+        if let Ok(guard) = cache.lock() {
+            if let Some(key) = guard.get(space_id) {
+                return Ok(key.clone());
+            }
+        }
+    }
     let url = client.v2_url(&format!("/spaces/{}", space_id));
     let (json, _) = client.get_json(url).await?;
-    Ok(json
+    let key = json
         .get("key")
         .and_then(|v| v.as_str())
         .unwrap_or(space_id)
-        .to_string())
+        .to_string();
+    if let Ok(mut guard) = SPACE_KEY_CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+    {
+        guard.insert(space_id.to_string(), key.clone());
+    }
+    Ok(key)
 }
 
 pub async fn resolve_space_keys(
@@ -72,6 +89,25 @@ pub async fn resolve_space_keys(
     if unique.is_empty() {
         return Ok(HashMap::new());
     }
+
+    // Serve from cache when possible.
+    let mut out: HashMap<String, String> = HashMap::new();
+    if let Some(cache) = SPACE_KEY_CACHE.get() {
+        if let Ok(guard) = cache.lock() {
+            unique.retain(|id| {
+                if let Some(key) = guard.get(id) {
+                    out.insert(id.clone(), key.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+    }
+    if unique.is_empty() {
+        return Ok(out);
+    }
+
     let mut map = HashMap::new();
     for chunk in unique.chunks(250) {
         let ids = chunk.join(",");
@@ -82,11 +118,28 @@ pub async fn resolve_space_keys(
                 item.get("id").and_then(|v| v.as_str()),
                 item.get("key").and_then(|v| v.as_str()),
             ) {
-                map.insert(id.to_string(), key.to_string());
+                let display = if key.starts_with('~') {
+                    item.get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(key)
+                        .to_string()
+                } else {
+                    key.to_string()
+                };
+                map.insert(id.to_string(), display);
             }
         }
     }
-    Ok(map)
+    if let Ok(mut guard) = SPACE_KEY_CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+    {
+        for (id, key) in &map {
+            guard.insert(id.clone(), key.clone());
+        }
+    }
+    out.extend(map);
+    Ok(out)
 }
 
 pub fn extract_page_id_from_url(url: &Url) -> Option<String> {

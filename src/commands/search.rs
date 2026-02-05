@@ -8,7 +8,9 @@ use std::sync::LazyLock;
 
 use crate::cli::SearchCommand;
 use crate::context::AppContext;
-use crate::helpers::{markdown_not_supported, maybe_print_json, maybe_print_table, url_with_query};
+use crate::helpers::{
+    markdown_not_supported, maybe_print_json, maybe_print_table_with_count, url_with_query,
+};
 
 pub async fn handle(ctx: &AppContext, cmd: SearchCommand) -> Result<()> {
     let client = crate::context::load_client(ctx)?;
@@ -22,7 +24,7 @@ pub async fn handle(ctx: &AppContext, cmd: SearchCommand) -> Result<()> {
             OutputFormat::Json => maybe_print_json(ctx, &results),
             OutputFormat::Table => {
                 let rows = results.iter().map(search_result_row).collect();
-                maybe_print_table(ctx, &["ID", "Type", "Title"], rows);
+                maybe_print_table_with_count(ctx, &["ID", "Type", "Space", "Title"], rows);
                 Ok(())
             }
             OutputFormat::Markdown => markdown_not_supported(),
@@ -42,7 +44,7 @@ pub async fn handle(ctx: &AppContext, cmd: SearchCommand) -> Result<()> {
                     .cloned()
                     .unwrap_or_default();
                 let rows = results.iter().map(search_result_row).collect();
-                maybe_print_table(ctx, &["ID", "Type", "Title"], rows);
+                maybe_print_table_with_count(ctx, &["ID", "Type", "Space", "Title"], rows);
                 Ok(())
             }
             OutputFormat::Markdown => markdown_not_supported(),
@@ -52,9 +54,37 @@ pub async fn handle(ctx: &AppContext, cmd: SearchCommand) -> Result<()> {
 
 fn search_result_row(item: &Value) -> Vec<String> {
     let content = item.get("content").cloned().unwrap_or(Value::Null);
+    let space = content
+        .get("space")
+        .and_then(|s| s.get("key"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            let container = item.get("resultGlobalContainer")?;
+            let key = container
+                .get("displayUrl")
+                .and_then(|v| v.as_str())
+                .and_then(|url| url.rsplit('/').next())
+                .unwrap_or("");
+            if key.starts_with('~') {
+                container
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            } else if !key.is_empty() {
+                Some(key.to_string())
+            } else {
+                container
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            }
+        })
+        .unwrap_or_default();
     vec![
         json_str(&content, "id"),
         json_str(&content, "type"),
+        space,
         json_str(&content, "title"),
     ]
 }

@@ -12,7 +12,7 @@ fn help_flag() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Confluence Cloud"));
+        .stdout(predicate::str::contains("scrappy little Confluence CLI"));
 }
 
 #[test]
@@ -39,7 +39,7 @@ fn space_help() {
         .args(["space", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Work with spaces"));
+        .stdout(predicate::str::contains("List and inspect spaces"));
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn page_help() {
         .args(["page", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Work with pages"));
+        .stdout(predicate::str::contains("List, view, create, and manage pages"));
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn attachment_help() {
         .args(["attachment", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Work with attachments"));
+        .stdout(predicate::str::contains("List, download, upload, and manage attachments"));
 }
 
 #[test]
@@ -75,7 +75,7 @@ fn label_help() {
         .args(["label", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Work with labels"));
+        .stdout(predicate::str::contains("List, add, and remove page labels"));
 }
 
 #[test]
