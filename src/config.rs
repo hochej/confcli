@@ -256,7 +256,8 @@ mod tests {
     #[test]
     fn backfills_api_bases_from_legacy_base_url() {
         // Ensure the test is not influenced by external env.
-        std::env::remove_var("CONFLUENCE_API_PATH");
+        // SAFETY: Unit tests run single-threaded (cargo test -- --test-threads=1 if needed).
+        unsafe { std::env::remove_var("CONFLUENCE_API_PATH") };
 
         let mut cfg = Config {
             site_url: "https://example.atlassian.net/wiki".to_string(),
