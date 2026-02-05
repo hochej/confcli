@@ -2,17 +2,9 @@ use anyhow::Result;
 use htmd::HtmlToMarkdown;
 use regex::Regex;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct MarkdownOptions {
     pub keep_empty_list_items: bool,
-}
-
-impl Default for MarkdownOptions {
-    fn default() -> Self {
-        Self {
-            keep_empty_list_items: false,
-        }
-    }
 }
 
 pub fn html_to_markdown(html: &str, base_url: &str) -> Result<String> {
@@ -44,9 +36,12 @@ fn preprocess_html(html: &str, base_url: &str) -> Result<String> {
     let panel_re = Regex::new(
         r#"(?s)<div class="panel[^"]*"[^>]*>\s*<div class="panelContent[^"]*"[^>]*>(.*?)</div>\s*</div>"#,
     )?;
-    content = panel_re.replace_all(&content, "<blockquote>$1</blockquote>").to_string();
+    content = panel_re
+        .replace_all(&content, "<blockquote>$1</blockquote>")
+        .to_string();
 
-    let status_re = Regex::new(r#"(?s)<span[^>]*class="[^"]*status-macro[^"]*"[^>]*>(.*?)</span>"#)?;
+    let status_re =
+        Regex::new(r#"(?s)<span[^>]*class="[^"]*status-macro[^"]*"[^>]*>(.*?)</span>"#)?;
     content = status_re.replace_all(&content, "[$1]").to_string();
 
     let href_re = Regex::new(r#"href="(/wiki[^"]*)""#)?;
@@ -78,7 +73,9 @@ fn add_image_alt_text(html: &str) -> String {
                 return format!("<img{attrs}{closing}>");
             }
             let alt = if let Some(cap) = alias_re.captures(attrs) {
-                cap.get(1).map(|m| m.as_str().to_string()).unwrap_or_default()
+                cap.get(1)
+                    .map(|m| m.as_str().to_string())
+                    .unwrap_or_default()
             } else if let Some(cap) = src_re.captures(attrs) {
                 let raw = cap.get(1).map(|m| m.as_str()).unwrap_or("");
                 extract_filename(raw)
@@ -219,7 +216,8 @@ fn postprocess_markdown(markdown: &str, options: MarkdownOptions) -> String {
                     }
                 }
 
-                let needs_separator = block.len() < 2 || !table_sep_re.is_match(block.get(1).map(String::as_str).unwrap_or(""));
+                let needs_separator = block.len() < 2
+                    || !table_sep_re.is_match(block.get(1).map(String::as_str).unwrap_or(""));
                 if needs_separator {
                     let header = block[0].trim().trim_matches('|');
                     let columns = header.split('|').count().max(1);
@@ -275,16 +273,19 @@ mod tests {
 
     #[test]
     fn inserts_table_separator() {
-        let md = postprocess_markdown("| **Driver** | |\n| **Approver** | |", MarkdownOptions::default());
-        assert_eq!(
-            md,
-            "| **Driver** | |\n| --- | --- |\n| **Approver** | |"
+        let md = postprocess_markdown(
+            "| **Driver** | |\n| **Approver** | |",
+            MarkdownOptions::default(),
         );
+        assert_eq!(md, "| **Driver** | |\n| --- | --- |\n| **Approver** | |");
     }
 
     #[test]
     fn replaces_separator_like_row() {
-        let md = postprocess_markdown("| **Notes** | |\n| ------------------- | |", MarkdownOptions::default());
+        let md = postprocess_markdown(
+            "| **Notes** | |\n| ------------------- | |",
+            MarkdownOptions::default(),
+        );
         assert_eq!(md, "| **Notes** | |\n| --- | --- |");
     }
 
@@ -298,6 +299,9 @@ mod tests {
     fn adds_alt_text_from_alias() {
         let html = r#"<img data-linked-resource-default-alias="diagram.png" src="/wiki/download/diagram.png">"#;
         let md = html_to_markdown(html, "https://example.com/wiki").unwrap();
-        assert_eq!(md.trim(), "![diagram.png](https://example.com/wiki/download/diagram.png)");
+        assert_eq!(
+            md.trim(),
+            "![diagram.png](https://example.com/wiki/download/diagram.png)"
+        );
     }
 }

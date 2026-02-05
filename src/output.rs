@@ -1,21 +1,22 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
+use clap::ValueEnum;
 use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
 use serde::Serialize;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
 pub enum OutputFormat {
     Json,
     Table,
+    #[value(alias = "md")]
     Markdown,
 }
 
-impl OutputFormat {
-    pub fn parse(value: &str) -> Result<Self> {
-        match value {
-            "json" => Ok(OutputFormat::Json),
-            "table" => Ok(OutputFormat::Table),
-            "markdown" | "md" => Ok(OutputFormat::Markdown),
-            _ => bail!("Invalid output format: {value}. Use json, table, or markdown."),
+impl std::fmt::Display for OutputFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputFormat::Json => write!(f, "json"),
+            OutputFormat::Table => write!(f, "table"),
+            OutputFormat::Markdown => write!(f, "markdown"),
         }
     }
 }

@@ -34,7 +34,11 @@ impl Config {
         let base_url = env::var("CONFLUENCE_BASE_URL")
             .ok()
             .or_else(|| env::var("CONFLUENCE_URL").ok())
-            .or_else(|| env::var("CONFLUENCE_DOMAIN").ok().map(|domain| format!("https://{domain}")));
+            .or_else(|| {
+                env::var("CONFLUENCE_DOMAIN")
+                    .ok()
+                    .map(|domain| format!("https://{domain}"))
+            });
 
         let base_url = match base_url {
             Some(mut url) => {
