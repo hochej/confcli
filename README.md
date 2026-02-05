@@ -83,6 +83,8 @@ confcli page get 12345                 # Get page by ID
 confcli page get MFS:Overview          # Get page by Space:Title
 confcli page body MFS:Overview         # Get page body as markdown
 confcli page body MFS:Overview --format storage   # Raw storage format
+confcli page history MFS:Overview      # Show version history
+confcli page open MFS:Overview         # Open page in browser
 
 # Create page
 confcli page create --space MFS --title "New Page" --body "<p>Hello</p>"
@@ -130,4 +132,35 @@ All commands support `-o` for output format:
 confcli space list -o json             # JSON output
 confcli space list -o table            # Table output (default)
 confcli page get MFS:Overview -o md    # Markdown output
+```
+
+### Dry Run
+
+Use `--dry-run` to preview destructive operations without executing them:
+
+```bash
+confcli --dry-run page create --space MFS --title "Test" --body "<p>Hello</p>"
+confcli --dry-run page delete 12345
+confcli --dry-run label add MFS:Overview "important"
+```
+
+## Security
+
+Credentials are stored as plaintext JSON in your OS config directory:
+
+- Linux: `~/.config/confcli/config.json` (or `$XDG_CONFIG_HOME/confcli/config.json`)
+- macOS: `~/Library/Application Support/confcli/config.json`
+- Windows: `%APPDATA%\\confcli\\config.json`
+
+`confcli auth status` prints the resolved config path when using file-based auth.
+On Unix systems the file is created with `0600` permissions (owner read/write only).
+
+For CI/CD or shared environments, use environment variables instead of the config file:
+
+```bash
+export CONFLUENCE_DOMAIN=yourcompany.atlassian.net
+export CONFLUENCE_EMAIL=you@example.com
+export CONFLUENCE_TOKEN=<api-token>
+# Or for OAuth:
+export CONFLUENCE_BEARER_TOKEN=<bearer-token>
 ```
