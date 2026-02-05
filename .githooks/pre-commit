@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Pre-commit hook: mirrors CI checks from .github/workflows/ci.yml
+
+echo "==> cargo fmt --check"
+cargo fmt --all -- --check
+
+echo "==> cargo clippy"
+cargo clippy --all-targets --all-features -- -D warnings
+
+echo "==> cargo test"
+cargo test --all-features
