@@ -186,3 +186,62 @@ fn page_open_help() {
         .success()
         .stdout(predicate::str::contains("browser"));
 }
+
+#[test]
+fn search_empty_query_rejected() {
+    // An empty search query should fail with a clear message, not a server 500.
+    confcli()
+        .args(["search", ""])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be empty"));
+}
+
+#[test]
+fn search_whitespace_query_rejected() {
+    confcli()
+        .args(["search", "   "])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be empty"));
+}
+
+#[test]
+#[cfg(feature = "write")]
+fn label_add_accepts_multiple() {
+    confcli()
+        .args(["label", "add", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Label name(s)"));
+}
+
+#[test]
+#[cfg(feature = "write")]
+fn label_remove_accepts_multiple() {
+    confcli()
+        .args(["label", "remove", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Label name(s)"));
+}
+
+#[test]
+#[cfg(feature = "write")]
+fn attachment_upload_accepts_multiple_files() {
+    confcli()
+        .args(["attachment", "upload", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("File(s) to upload"));
+}
+
+#[test]
+#[cfg(feature = "write")]
+fn space_delete_help() {
+    confcli()
+        .args(["space", "delete", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Delete a space"));
+}

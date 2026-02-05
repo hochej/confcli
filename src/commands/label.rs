@@ -10,10 +10,7 @@ use crate::cli::*;
 use crate::context::AppContext;
 #[cfg(feature = "write")]
 use crate::helpers::print_line;
-use crate::helpers::{
-    markdown_not_supported, maybe_print_json, maybe_print_table_with_count, url_with_query,
-};
-#[cfg(feature = "write")]
+use crate::helpers::{maybe_print_json, maybe_print_rows, url_with_query};
 use crate::resolve::resolve_page_id;
 
 pub async fn handle(ctx: &AppContext, cmd: LabelCommand) -> Result<()> {
@@ -29,28 +26,55 @@ pub async fn handle(ctx: &AppContext, cmd: LabelCommand) -> Result<()> {
 }
 
 async fn label_list(client: &ApiClient, ctx: &AppContext, args: LabelListArgs) -> Result<()> {
-    let url = url_with_query(
-        &client.v2_url("/labels"),
-        &[("limit", args.limit.to_string())],
-    )?;
-    let items = client.get_paginated_results(url, args.all).await?;
-    match args.output {
-        OutputFormat::Json => maybe_print_json(ctx, &items),
-        OutputFormat::Table => {
-            let rows = items
-                .iter()
-                .map(|item| {
-                    vec![
-                        json_str(item, "id"),
-                        json_str(item, "name"),
-                        json_str(item, "prefix"),
-                    ]
-                })
-                .collect();
-            maybe_print_table_with_count(ctx, &["ID", "Name", "Prefix"], rows);
-            Ok(())
+    if let Some(page) = &args.page {
+        // Page-scoped: list labels on a specific page via v1 API.
+        let page_id = resolve_page_id(client, page).await?;
+        let url = url_with_query(
+            &client.v1_url(&format!("/content/{page_id}/label")),
+            &[("limit", args.limit.to_string())],
+        )?;
+        let items = client.get_paginated_results(url, args.all).await?;
+        match args.output {
+            OutputFormat::Json => maybe_print_json(ctx, &items),
+            fmt => {
+                let rows = items
+                    .iter()
+                    .map(|item| {
+                        vec![
+                            json_str(item, "id"),
+                            json_str(item, "name"),
+                            json_str(item, "prefix"),
+                        ]
+                    })
+                    .collect();
+                maybe_print_rows(ctx, fmt, &["ID", "Name", "Prefix"], rows);
+                Ok(())
+            }
         }
-        OutputFormat::Markdown => markdown_not_supported(),
+    } else {
+        // Global: list all labels in the instance.
+        let url = url_with_query(
+            &client.v2_url("/labels"),
+            &[("limit", args.limit.to_string())],
+        )?;
+        let items = client.get_paginated_results(url, args.all).await?;
+        match args.output {
+            OutputFormat::Json => maybe_print_json(ctx, &items),
+            fmt => {
+                let rows = items
+                    .iter()
+                    .map(|item| {
+                        vec![
+                            json_str(item, "id"),
+                            json_str(item, "name"),
+                            json_str(item, "prefix"),
+                        ]
+                    })
+                    .collect();
+                maybe_print_rows(ctx, fmt, &["ID", "Name", "Prefix"], rows);
+                Ok(())
+            }
+        }
     }
 }
 
@@ -59,19 +83,28 @@ async fn label_add(client: &ApiClient, ctx: &AppContext, args: LabelAddArgs) -> 
     let page_id = resolve_page_id(client, &args.page).await?;
 
     if ctx.dry_run {
+        let names = args.labels.join(", ");
         print_line(
             ctx,
-            &format!("Would add label '{}' to page {page_id}", args.label),
+            &format!("Would add label(s) '{names}' to page {page_id}"),
         );
         return Ok(());
     }
 
     let url = client.v1_url(&format!("/content/{page_id}/label"));
-    let body = json!([
-        { "prefix": "global", "name": args.label }
-    ]);
+    let body: serde_json::Value = args
+        .labels
+        .iter()
+        .map(|l| json!({ "prefix": "global", "name": l }))
+        .collect::<Vec<_>>()
+        .into();
     client.post_json(url, body).await?;
-    print_line(ctx, "Added label.");
+    let noun = if args.labels.len() == 1 {
+        "label"
+    } else {
+        "labels"
+    };
+    print_line(ctx, &format!("Added {} {}.", args.labels.len(), noun));
     Ok(())
 }
 
@@ -80,19 +113,27 @@ async fn label_remove(client: &ApiClient, ctx: &AppContext, args: LabelRemoveArg
     let page_id = resolve_page_id(client, &args.page).await?;
 
     if ctx.dry_run {
+        let names = args.labels.join(", ");
         print_line(
             ctx,
-            &format!("Would remove label '{}' from page {page_id}", args.label),
+            &format!("Would remove label(s) '{names}' from page {page_id}"),
         );
         return Ok(());
     }
 
-    let url = client.v1_url(&format!(
-        "/content/{page_id}/label?name={}&prefix=global",
-        urlencoding::encode(&args.label)
-    ));
-    client.delete(url).await?;
-    print_line(ctx, "Removed label.");
+    for label in &args.labels {
+        let url = client.v1_url(&format!(
+            "/content/{page_id}/label?name={}&prefix=global",
+            urlencoding::encode(label)
+        ));
+        client.delete(url).await?;
+    }
+    let noun = if args.labels.len() == 1 {
+        "label"
+    } else {
+        "labels"
+    };
+    print_line(ctx, &format!("Removed {} {}.", args.labels.len(), noun));
     Ok(())
 }
 
@@ -105,17 +146,16 @@ async fn label_pages(client: &ApiClient, ctx: &AppContext, args: LabelPagesArgs)
     let (json, _) = client.get_json(url).await?;
     match args.output {
         OutputFormat::Json => maybe_print_json(ctx, &json),
-        OutputFormat::Table => {
+        fmt => {
             let results = json
                 .get("results")
                 .and_then(|v| v.as_array())
                 .cloned()
                 .unwrap_or_default();
             let rows = results.iter().map(label_result_row).collect();
-            maybe_print_table_with_count(ctx, &["ID", "Type", "Title"], rows);
+            maybe_print_rows(ctx, fmt, &["ID", "Type", "Title"], rows);
             Ok(())
         }
-        OutputFormat::Markdown => markdown_not_supported(),
     }
 }
 

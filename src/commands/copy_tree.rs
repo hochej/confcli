@@ -312,16 +312,15 @@ async fn copy_tree(client: &ApiClient, ctx: &AppContext, args: CopyTreeArgs) -> 
         OutputFormat::Json => {
             maybe_print_json(ctx, &json!({ "mapping": mapping, "created": created }))
         }
-        OutputFormat::Table => {
+        fmt => {
             let rows = vec![
                 vec!["Source".to_string(), source_id.clone()],
                 vec!["TargetParent".to_string(), target_parent_id.clone()],
                 vec!["Created".to_string(), created.len().to_string()],
             ];
-            maybe_print_kv(ctx, rows);
+            maybe_print_kv_fmt(ctx, fmt, rows);
             Ok(())
         }
-        OutputFormat::Markdown => markdown_not_supported(),
     }
 }
 

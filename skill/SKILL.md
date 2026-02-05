@@ -50,6 +50,7 @@ Use `--dry-run` to preview destructive operations without executing them.
 confcli space list
 confcli space get MFS
 confcli space pages MFS --tree
+confcli space delete MFS --yes
 
 # Pages
 confcli page list --space MFS --title "Overview"
@@ -75,12 +76,12 @@ confcli page delete 12345
 
 # Attachments
 confcli attachment list --page MFS:Overview
-confcli attachment upload MFS:Overview ./file.png
+confcli attachment upload MFS:Overview ./file.png ./other.pdf
 confcli attachment download att12345 --dest file.png
 
 # Labels
-confcli label add MFS:Overview "tag"
-confcli label remove MFS:Overview "tag"
+confcli label add MFS:Overview tag1 tag2 tag3
+confcli label remove MFS:Overview tag1 tag2
 confcli label pages "tag"
 
 # Comments

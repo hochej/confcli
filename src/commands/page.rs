@@ -51,7 +51,7 @@ async fn page_list(client: &ApiClient, ctx: &AppContext, args: PageListArgs) -> 
     let items = client.get_paginated_results(url, args.all).await?;
     match args.output {
         OutputFormat::Json => maybe_print_json(ctx, &items),
-        OutputFormat::Table => {
+        fmt => {
             let space_ids: Vec<String> = items
                 .iter()
                 .filter_map(|item| {
@@ -77,10 +77,9 @@ async fn page_list(client: &ApiClient, ctx: &AppContext, args: PageListArgs) -> 
                     ]
                 })
                 .collect();
-            maybe_print_table_with_count(ctx, &["ID", "Title", "Space", "Status"], rows);
+            maybe_print_rows(ctx, fmt, &["ID", "Title", "Space", "Status"], rows);
             Ok(())
         }
-        OutputFormat::Markdown => markdown_not_supported(),
     }
 }
 
@@ -111,7 +110,7 @@ async fn page_get(client: &ApiClient, ctx: &AppContext, args: PageGetArgs) -> Re
                 .and_then(|v| v.get("number"))
                 .map(|v| v.to_string())
                 .unwrap_or_default();
-            let rows = vec![
+            let mut rows = vec![
                 vec!["ID".to_string(), json_str(&json, "id")],
                 vec!["Title".to_string(), json_str(&json, "title")],
                 vec!["Space".to_string(), space_key],
@@ -120,7 +119,16 @@ async fn page_get(client: &ApiClient, ctx: &AppContext, args: PageGetArgs) -> Re
                 vec!["Parent".to_string(), json_str(&json, "parentId")],
                 vec!["URL".to_string(), format!("{}{webui}", client.base_url())],
             ];
-            maybe_print_kv(ctx, rows);
+            // Include body content when a body format was requested.
+            if let Some(body_value) = json
+                .get("body")
+                .and_then(|body| body.get(&args.body_format))
+                .and_then(|fmt| fmt.get("value"))
+                .and_then(|v| v.as_str())
+            {
+                rows.push(vec!["Body".to_string(), body_value.to_string()]);
+            }
+            maybe_print_kv_fmt(ctx, OutputFormat::Table, rows);
             Ok(())
         }
         OutputFormat::Markdown => {
@@ -153,7 +161,7 @@ async fn page_get(client: &ApiClient, ctx: &AppContext, args: PageGetArgs) -> Re
 async fn page_body(client: &ApiClient, ctx: &AppContext, args: PageBodyArgs) -> Result<()> {
     let page_id = resolve_page_id(client, &args.page).await?;
     let format = args.format.to_lowercase();
-    match format.as_str() {
+    let body_value: String = match format.as_str() {
         "markdown" | "md" => {
             let url = client.v2_url(&format!("/pages/{page_id}?body-format=view"));
             let (json, _) = client.get_json(url).await?;
@@ -170,13 +178,11 @@ async fn page_body(client: &ApiClient, ctx: &AppContext, args: PageBodyArgs) -> 
                     keep_empty_list_items: args.keep_empty_list_items,
                 },
             )?;
-            let output = if ctx.quiet {
+            if ctx.quiet {
                 markdown
             } else {
                 add_markdown_header(client.base_url(), &json, &markdown)
-            };
-            println!("{output}");
-            Ok(())
+            }
         }
         "view" => {
             let url = client.v2_url(&format!("/pages/{page_id}?body-format=view"));
@@ -187,21 +193,17 @@ async fn page_body(client: &ApiClient, ctx: &AppContext, args: PageBodyArgs) -> 
                 .and_then(|view| view.get("value"))
                 .and_then(|value| value.as_str())
                 .context("Missing view body content")?;
-            let decoded = decode_unicode_escapes_str(html);
-            println!("{decoded}");
-            Ok(())
+            decode_unicode_escapes_str(html)
         }
         "storage" => {
             let url = client.v2_url(&format!("/pages/{page_id}?body-format=storage"));
             let (json, _) = client.get_json(url).await?;
-            let body = json
-                .get("body")
+            json.get("body")
                 .and_then(|body| body.get("storage"))
                 .and_then(|storage| storage.get("value"))
                 .and_then(|value| value.as_str())
-                .context("Missing storage body content")?;
-            println!("{body}");
-            Ok(())
+                .context("Missing storage body content")?
+                .to_string()
         }
         "atlas_doc_format" | "adf" => {
             let url = client.v2_url(&format!("/pages/{page_id}?body-format=atlas_doc_format"));
@@ -213,15 +215,34 @@ async fn page_body(client: &ApiClient, ctx: &AppContext, args: PageBodyArgs) -> 
                 .and_then(|value| value.as_str())
                 .context("Missing ADF body content")?;
             match serde_json::from_str::<serde_json::Value>(body) {
-                Ok(value) => print_json(&value)?,
-                Err(_) => println!("{body}"),
+                Ok(value) => {
+                    serde_json::to_string_pretty(&value).unwrap_or_else(|_| body.to_string())
+                }
+                Err(_) => body.to_string(),
             }
+        }
+        _ => {
+            return Err(anyhow::anyhow!(
+                "Invalid body format: {}. Use markdown, view, storage, atlas_doc_format, or adf.",
+                args.format
+            ));
+        }
+    };
+
+    match args.output {
+        OutputFormat::Json => {
+            let obj = serde_json::json!({
+                "pageId": page_id,
+                "format": args.format,
+                "body": body_value,
+            });
+            print_json(&obj)?;
             Ok(())
         }
-        _ => Err(anyhow::anyhow!(
-            "Invalid body format: {}. Use markdown, view, storage, atlas_doc_format, or adf.",
-            args.format
-        )),
+        _ => {
+            println!("{body_value}");
+            Ok(())
+        }
     }
 }
 
@@ -416,7 +437,7 @@ async fn page_create(client: &ApiClient, ctx: &AppContext, args: PageCreateArgs)
     let result = client.post_json(url, payload).await?;
     match args.output {
         OutputFormat::Json => maybe_print_json(ctx, &result),
-        OutputFormat::Table => {
+        fmt => {
             let space_key = resolve_space_key(
                 client,
                 result.get("spaceId").and_then(|v| v.as_str()).unwrap_or(""),
@@ -434,10 +455,9 @@ async fn page_create(client: &ApiClient, ctx: &AppContext, args: PageCreateArgs)
                 vec!["Space".to_string(), space_key],
                 vec!["Web".to_string(), webui.to_string()],
             ];
-            maybe_print_kv(ctx, rows);
+            maybe_print_kv_fmt(ctx, fmt, rows);
             Ok(())
         }
-        OutputFormat::Markdown => markdown_not_supported(),
     }
 }
 
@@ -515,7 +535,7 @@ async fn page_update(client: &ApiClient, ctx: &AppContext, args: PageUpdateArgs)
     let result = client.put_json(url, payload).await?;
     match args.output {
         OutputFormat::Json => maybe_print_json(ctx, &result),
-        OutputFormat::Table => {
+        fmt => {
             let webui = result
                 .get("_links")
                 .and_then(|v| v.get("webui"))
@@ -527,10 +547,9 @@ async fn page_update(client: &ApiClient, ctx: &AppContext, args: PageUpdateArgs)
                 vec!["Status".to_string(), json_str(&result, "status")],
                 vec!["Web".to_string(), webui.to_string()],
             ];
-            maybe_print_kv(ctx, rows);
+            maybe_print_kv_fmt(ctx, fmt, rows);
             Ok(())
         }
-        OutputFormat::Markdown => markdown_not_supported(),
     }
 }
 
@@ -595,7 +614,7 @@ async fn page_children(client: &ApiClient, ctx: &AppContext, args: PageChildrenA
     let items = client.get_paginated_results(url, args.all).await?;
     match args.output {
         OutputFormat::Json => maybe_print_json(ctx, &items),
-        OutputFormat::Table => {
+        fmt => {
             if args.recursive {
                 let rows = items
                     .iter()
@@ -607,17 +626,16 @@ async fn page_children(client: &ApiClient, ctx: &AppContext, args: PageChildrenA
                         ]
                     })
                     .collect();
-                maybe_print_table_with_count(ctx, &["ID", "Title", "Parent"], rows);
+                maybe_print_rows(ctx, fmt, &["ID", "Title", "Parent"], rows);
             } else {
                 let rows = items
                     .iter()
                     .map(|item| vec![json_str(item, "id"), json_str(item, "title")])
                     .collect();
-                maybe_print_table_with_count(ctx, &["ID", "Title"], rows);
+                maybe_print_rows(ctx, fmt, &["ID", "Title"], rows);
             }
             Ok(())
         }
-        OutputFormat::Markdown => markdown_not_supported(),
     }
 }
 
@@ -630,7 +648,7 @@ async fn page_history(client: &ApiClient, ctx: &AppContext, args: PageHistoryArg
     let items = client.get_paginated_results(url, false).await?;
     match args.output {
         OutputFormat::Json => maybe_print_json(ctx, &items),
-        OutputFormat::Table => {
+        fmt => {
             let rows = items
                 .iter()
                 .map(|item| {
@@ -649,10 +667,9 @@ async fn page_history(client: &ApiClient, ctx: &AppContext, args: PageHistoryArg
                     vec![number, message, created_at, minor_edit]
                 })
                 .collect();
-            maybe_print_table_with_count(ctx, &["Version", "Message", "Created", "Minor"], rows);
+            maybe_print_rows(ctx, fmt, &["Version", "Message", "Created", "Minor"], rows);
             Ok(())
         }
-        OutputFormat::Markdown => markdown_not_supported(),
     }
 }
 

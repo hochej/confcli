@@ -8,11 +8,12 @@ use std::sync::LazyLock;
 
 use crate::cli::SearchCommand;
 use crate::context::AppContext;
-use crate::helpers::{
-    markdown_not_supported, maybe_print_json, maybe_print_table_with_count, url_with_query,
-};
+use crate::helpers::{maybe_print_json, maybe_print_rows, url_with_query};
 
 pub async fn handle(ctx: &AppContext, cmd: SearchCommand) -> Result<()> {
+    if cmd.query.trim().is_empty() {
+        return Err(anyhow::anyhow!("Search query cannot be empty"));
+    }
     let client = crate::context::load_client(ctx)?;
     let mut cql = to_cql_query(&cmd.query);
     if let Some(space) = cmd.space {
@@ -22,12 +23,11 @@ pub async fn handle(ctx: &AppContext, cmd: SearchCommand) -> Result<()> {
         let results = search_all(&client, &cql, cmd.limit).await?;
         match cmd.output {
             OutputFormat::Json => maybe_print_json(ctx, &results),
-            OutputFormat::Table => {
+            fmt => {
                 let rows = results.iter().map(search_result_row).collect();
-                maybe_print_table_with_count(ctx, &["ID", "Type", "Space", "Title"], rows);
+                maybe_print_rows(ctx, fmt, &["ID", "Type", "Space", "Title"], rows);
                 Ok(())
             }
-            OutputFormat::Markdown => markdown_not_supported(),
         }
     } else {
         let url = url_with_query(
@@ -37,17 +37,16 @@ pub async fn handle(ctx: &AppContext, cmd: SearchCommand) -> Result<()> {
         let (json, _) = client.get_json(url).await?;
         match cmd.output {
             OutputFormat::Json => maybe_print_json(ctx, &json),
-            OutputFormat::Table => {
+            fmt => {
                 let results = json
                     .get("results")
                     .and_then(|v| v.as_array())
                     .cloned()
                     .unwrap_or_default();
                 let rows = results.iter().map(search_result_row).collect();
-                maybe_print_table_with_count(ctx, &["ID", "Type", "Space", "Title"], rows);
+                maybe_print_rows(ctx, fmt, &["ID", "Type", "Space", "Title"], rows);
                 Ok(())
             }
-            OutputFormat::Markdown => markdown_not_supported(),
         }
     }
 }

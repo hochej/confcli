@@ -42,7 +42,7 @@ async fn attachment_list(
     let items = client.get_paginated_results(url, args.all).await?;
     match args.output {
         OutputFormat::Json => maybe_print_json(ctx, &items),
-        OutputFormat::Table => {
+        fmt => {
             let rows = items
                 .iter()
                 .map(|item| {
@@ -54,10 +54,9 @@ async fn attachment_list(
                     ]
                 })
                 .collect();
-            maybe_print_table_with_count(ctx, &["ID", "Title", "Type", "Size"], rows);
+            maybe_print_rows(ctx, fmt, &["ID", "Title", "Type", "Size"], rows);
             Ok(())
         }
-        OutputFormat::Markdown => markdown_not_supported(),
     }
 }
 
@@ -70,7 +69,7 @@ async fn attachment_get(
     let (json, _) = client.get_json(url).await?;
     match args.output {
         OutputFormat::Json => maybe_print_json(ctx, &json),
-        OutputFormat::Table => {
+        fmt => {
             let rows = vec![
                 vec!["ID".to_string(), json_str(&json, "id")],
                 vec!["Title".to_string(), json_str(&json, "title")],
@@ -80,10 +79,9 @@ async fn attachment_get(
                     human_size(json.get("fileSize").and_then(|v| v.as_i64()).unwrap_or(0)),
                 ],
             ];
-            maybe_print_kv(ctx, rows);
+            maybe_print_kv_fmt(ctx, fmt, rows);
             Ok(())
         }
-        OutputFormat::Markdown => markdown_not_supported(),
     }
 }
 
@@ -159,50 +157,59 @@ async fn attachment_upload(
     let page_id = resolve_page_id(client, &args.page).await?;
 
     if ctx.dry_run {
+        let names: Vec<_> = args.files.iter().map(|f| f.display().to_string()).collect();
         print_line(
             ctx,
-            &format!("Would upload {} to page {page_id}", args.file.display()),
+            &format!("Would upload {} to page {page_id}", names.join(", ")),
         );
         return Ok(());
     }
 
-    let metadata = tokio::fs::metadata(&args.file).await?;
-    let size = metadata.len();
-    if size > 5 * 1024 * 1024 {
-        let confirm = Confirm::new()
-            .with_prompt(format!(
-                "Upload {:.2} MB attachment?",
-                size as f64 / 1_048_576.0
-            ))
-            .default(false)
-            .interact()?;
-        if !confirm {
-            print_line(ctx, "Cancelled.");
-            return Ok(());
+    let mut all_attachments = Vec::new();
+    for file in &args.files {
+        let metadata = tokio::fs::metadata(file).await?;
+        let size = metadata.len();
+        if size > 5 * 1024 * 1024 {
+            let confirm = Confirm::new()
+                .with_prompt(format!(
+                    "Upload {} ({:.2} MB)?",
+                    file.display(),
+                    size as f64 / 1_048_576.0
+                ))
+                .default(false)
+                .interact()?;
+            if !confirm {
+                print_line(ctx, &format!("Skipped {}.", file.display()));
+                continue;
+            }
         }
+
+        let result = client
+            .upload_attachment(&page_id, file, args.comment.clone())
+            .await?;
+        let attachment = result
+            .get("results")
+            .and_then(|v| v.as_array())
+            .and_then(|items| items.first())
+            .cloned()
+            .unwrap_or(result);
+        match args.output {
+            OutputFormat::Json => {}
+            _ => {
+                let rows = vec![
+                    vec!["ID".to_string(), json_str(&attachment, "id")],
+                    vec!["Title".to_string(), json_str(&attachment, "title")],
+                ];
+                maybe_print_kv(ctx, rows);
+            }
+        }
+        all_attachments.push(attachment);
     }
 
-    let result = client
-        .upload_attachment(&page_id, &args.file, args.comment)
-        .await?;
-    let attachment = result
-        .get("results")
-        .and_then(|v| v.as_array())
-        .and_then(|items| items.first())
-        .cloned()
-        .unwrap_or(result);
-    match args.output {
-        OutputFormat::Json => maybe_print_json(ctx, &attachment),
-        OutputFormat::Table => {
-            let rows = vec![
-                vec!["ID".to_string(), json_str(&attachment, "id")],
-                vec!["Title".to_string(), json_str(&attachment, "title")],
-            ];
-            maybe_print_kv(ctx, rows);
-            Ok(())
-        }
-        OutputFormat::Markdown => markdown_not_supported(),
+    if matches!(args.output, OutputFormat::Json) {
+        maybe_print_json(ctx, &all_attachments)?;
     }
+    Ok(())
 }
 
 #[cfg(feature = "write")]

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.3] - 2026-02-05
+
+### Fixed
+
+- **Empty search query** no longer causes a server 500 — now validated client-side with a clear error message
+- **`comment list`** now includes reply (child) comments, not just top-level comments
+- **`page get --body-format`** now shows the body content in table output (previously only visible with `-o json`)
+
+### Added
+
+- **`space delete`** command — deletes a space via v1 API with confirmation prompt and `--dry-run` support
+- **`label add` accepts multiple labels** — e.g. `confcli label add PAGE tag1 tag2 tag3`
+- **`label remove` accepts multiple labels** — e.g. `confcli label remove PAGE tag1 tag2`
+- **`attachment upload` accepts multiple files** — e.g. `confcli attachment upload PAGE a.txt b.png`
+- Integration tests for empty/whitespace search, multi-label, multi-file upload, and space delete
+
 ## [0.2.2] - 2026-02-05
 
 ### Fixed

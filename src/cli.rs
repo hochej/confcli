@@ -124,6 +124,9 @@ pub enum SpaceCommand {
     #[cfg(feature = "write")]
     #[command(about = "Create a space")]
     Create(SpaceCreateArgs),
+    #[cfg(feature = "write")]
+    #[command(about = "Delete a space")]
+    Delete(SpaceDeleteArgs),
 }
 
 #[derive(Args, Debug)]
@@ -193,6 +196,15 @@ pub struct SpaceCreateArgs {
     pub description: Option<String>,
     #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
     pub output: OutputFormat,
+}
+
+#[cfg(feature = "write")]
+#[derive(Args, Debug)]
+pub struct SpaceDeleteArgs {
+    #[arg(help = "Space key or id")]
+    pub space: String,
+    #[arg(short = 'y', long, help = "Skip confirmation prompt")]
+    pub yes: bool,
 }
 
 // --- Page ---
@@ -276,6 +288,8 @@ pub struct PageBodyArgs {
         help = "Body format: markdown, view, storage, atlas_doc_format, adf"
     )]
     pub format: String,
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table (json wraps body in a JSON object)")]
+    pub output: OutputFormat,
 }
 
 #[cfg(feature = "write")]
@@ -445,9 +459,9 @@ pub enum AttachmentCommand {
 
 #[derive(Args, Debug)]
 pub struct AttachmentListArgs {
-    #[arg(long, help = "Page id, URL, or SPACE:Title to scope attachments")]
+    #[arg(help = "Page id, URL, or SPACE:Title (omit to list all attachments)")]
     pub page: Option<String>,
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
     #[arg(short = 'a', long, help = "Fetch all pages of results")]
     pub all: bool,
@@ -481,8 +495,8 @@ pub struct AttachmentDownloadArgs {
 pub struct AttachmentUploadArgs {
     #[arg(help = "Page id, URL, or SPACE:Title")]
     pub page: String,
-    #[arg(help = "File to upload")]
-    pub file: PathBuf,
+    #[arg(required = true, num_args = 1.., help = "File(s) to upload")]
+    pub files: Vec<PathBuf>,
     #[arg(long, help = "Optional attachment comment")]
     pub comment: Option<String>,
     #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
@@ -518,7 +532,9 @@ pub enum LabelCommand {
 
 #[derive(Args, Debug)]
 pub struct LabelListArgs {
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    #[arg(help = "Page id, URL, or SPACE:Title (omit to list all labels)")]
+    pub page: Option<String>,
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
     #[arg(short = 'a', long, help = "Fetch all pages of results")]
     pub all: bool,
@@ -536,8 +552,8 @@ pub struct LabelListArgs {
 pub struct LabelAddArgs {
     #[arg(help = "Page id, URL, or SPACE:Title")]
     pub page: String,
-    #[arg(help = "Label name")]
-    pub label: String,
+    #[arg(required = true, num_args = 1.., help = "Label name(s)")]
+    pub labels: Vec<String>,
 }
 
 #[cfg(feature = "write")]
@@ -545,8 +561,8 @@ pub struct LabelAddArgs {
 pub struct LabelRemoveArgs {
     #[arg(help = "Page id, URL, or SPACE:Title")]
     pub page: String,
-    #[arg(help = "Label name")]
-    pub label: String,
+    #[arg(required = true, num_args = 1.., help = "Label name(s)")]
+    pub labels: Vec<String>,
 }
 
 #[derive(Args, Debug)]
@@ -607,6 +623,8 @@ pub struct CommentListArgs {
 pub struct CommentAddArgs {
     #[arg(help = "Page id, URL, or SPACE:Title")]
     pub page: String,
+    #[arg(help = "Comment body text (alternative to --body/--body-file)")]
+    pub message: Option<String>,
     #[arg(long, help = "Reply to an existing comment id")]
     pub parent: Option<String>,
     #[arg(long, help = "Comment location: footer or inline")]

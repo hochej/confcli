@@ -167,7 +167,7 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
             });
             maybe_print_json(ctx, &out)
         }
-        OutputFormat::Table => {
+        fmt => {
             let rows = vec![
                 vec!["Dir".to_string(), out_dir.display().to_string()],
                 vec!["Content".to_string(), content_path.display().to_string()],
@@ -176,10 +176,9 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
                     attachments_written.len().to_string(),
                 ],
             ];
-            maybe_print_kv(ctx, rows);
+            maybe_print_kv_fmt(ctx, fmt, rows);
             Ok(())
         }
-        OutputFormat::Markdown => markdown_not_supported(),
     }
 }
 

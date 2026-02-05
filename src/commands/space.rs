@@ -3,19 +3,18 @@ use confcli::client::ApiClient;
 use confcli::json_util::json_str;
 use confcli::output::OutputFormat;
 #[cfg(feature = "write")]
+use dialoguer::Confirm;
+#[cfg(feature = "write")]
 use serde_json::json;
 
-#[cfg(feature = "write")]
-use crate::cli::SpaceCreateArgs;
 use crate::cli::{SpaceCommand, SpaceGetArgs, SpaceListArgs, SpacePagesArgs};
+#[cfg(feature = "write")]
+use crate::cli::{SpaceCreateArgs, SpaceDeleteArgs};
 use crate::context::AppContext;
 #[cfg(feature = "write")]
 use crate::helpers::print_line;
-use crate::helpers::{
-    markdown_not_supported, maybe_print_json, maybe_print_kv, maybe_print_table_with_count,
-    url_with_query,
-};
-use crate::resolve::{build_page_tree, resolve_space_id};
+use crate::helpers::{maybe_print_json, maybe_print_kv_fmt, maybe_print_rows, url_with_query};
+use crate::resolve::{build_page_tree, resolve_space_id, resolve_space_key};
 
 pub async fn handle(ctx: &AppContext, cmd: SpaceCommand) -> Result<()> {
     let client = crate::context::load_client(ctx)?;
@@ -25,6 +24,8 @@ pub async fn handle(ctx: &AppContext, cmd: SpaceCommand) -> Result<()> {
         SpaceCommand::Pages(args) => space_pages(&client, ctx, args).await,
         #[cfg(feature = "write")]
         SpaceCommand::Create(args) => space_create(&client, ctx, args).await,
+        #[cfg(feature = "write")]
+        SpaceCommand::Delete(args) => space_delete(&client, ctx, args).await,
     }
 }
 
@@ -46,7 +47,7 @@ async fn space_list(client: &ApiClient, ctx: &AppContext, args: SpaceListArgs) -
     let items = client.get_paginated_results(url, args.all).await?;
     match args.output {
         OutputFormat::Json => maybe_print_json(ctx, &items),
-        OutputFormat::Table => {
+        fmt => {
             let rows = items
                 .iter()
                 .map(|item| {
@@ -59,10 +60,9 @@ async fn space_list(client: &ApiClient, ctx: &AppContext, args: SpaceListArgs) -
                     ]
                 })
                 .collect();
-            maybe_print_table_with_count(ctx, &["ID", "Key", "Name", "Type", "Status"], rows);
+            maybe_print_rows(ctx, fmt, &["ID", "Key", "Name", "Type", "Status"], rows);
             Ok(())
         }
-        OutputFormat::Markdown => markdown_not_supported(),
     }
 }
 
@@ -72,7 +72,7 @@ async fn space_get(client: &ApiClient, ctx: &AppContext, args: SpaceGetArgs) -> 
     let (json, _) = client.get_json(url).await?;
     match args.output {
         OutputFormat::Json => maybe_print_json(ctx, &json),
-        OutputFormat::Table => {
+        fmt => {
             let rows = vec![
                 vec!["ID".to_string(), json_str(&json, "id")],
                 vec!["Key".to_string(), json_str(&json, "key")],
@@ -80,10 +80,9 @@ async fn space_get(client: &ApiClient, ctx: &AppContext, args: SpaceGetArgs) -> 
                 vec!["Type".to_string(), json_str(&json, "type")],
                 vec!["Status".to_string(), json_str(&json, "status")],
             ];
-            maybe_print_kv(ctx, rows);
+            maybe_print_kv_fmt(ctx, fmt, rows);
             Ok(())
         }
-        OutputFormat::Markdown => markdown_not_supported(),
     }
 }
 
@@ -102,19 +101,18 @@ async fn space_pages(client: &ApiClient, ctx: &AppContext, args: SpacePagesArgs)
     if args.tree {
         match args.output {
             OutputFormat::Json => maybe_print_json(ctx, &items),
-            OutputFormat::Table => {
+            _ => {
                 let tree = build_page_tree(&items);
                 for line in tree {
                     println!("{line}");
                 }
                 Ok(())
             }
-            OutputFormat::Markdown => markdown_not_supported(),
         }
     } else {
         match args.output {
             OutputFormat::Json => maybe_print_json(ctx, &items),
-            OutputFormat::Table => {
+            fmt => {
                 let rows = items
                     .iter()
                     .map(|item| {
@@ -126,10 +124,9 @@ async fn space_pages(client: &ApiClient, ctx: &AppContext, args: SpacePagesArgs)
                         ]
                     })
                     .collect();
-                maybe_print_table_with_count(ctx, &["ID", "Title", "Status", "Parent"], rows);
+                maybe_print_rows(ctx, fmt, &["ID", "Title", "Status", "Parent"], rows);
                 Ok(())
             }
-            OutputFormat::Markdown => markdown_not_supported(),
         }
     }
 }
@@ -160,7 +157,7 @@ async fn space_create(client: &ApiClient, ctx: &AppContext, args: SpaceCreateArg
 
     match args.output {
         OutputFormat::Json => maybe_print_json(ctx, &result),
-        OutputFormat::Table => {
+        fmt => {
             let rows = vec![
                 vec!["ID".to_string(), json_str(&result, "id")],
                 vec!["Key".to_string(), json_str(&result, "key")],
@@ -168,9 +165,41 @@ async fn space_create(client: &ApiClient, ctx: &AppContext, args: SpaceCreateArg
                 vec!["Type".to_string(), json_str(&result, "type")],
                 vec!["Status".to_string(), json_str(&result, "status")],
             ];
-            maybe_print_kv(ctx, rows);
+            maybe_print_kv_fmt(ctx, fmt, rows);
             Ok(())
         }
-        OutputFormat::Markdown => markdown_not_supported(),
     }
+}
+
+#[cfg(feature = "write")]
+async fn space_delete(client: &ApiClient, ctx: &AppContext, args: SpaceDeleteArgs) -> Result<()> {
+    let space_id = resolve_space_id(client, &args.space).await?;
+    let space_key = resolve_space_key(client, &space_id).await?;
+
+    if ctx.dry_run {
+        print_line(ctx, &format!("Would delete space {space_key}"));
+        return Ok(());
+    }
+
+    if !args.yes {
+        let confirm = Confirm::new()
+            .with_prompt(format!(
+                "Delete space {space_key}? This will trash all content in the space."
+            ))
+            .default(false)
+            .interact()
+            .map_err(|err| {
+                anyhow::anyhow!("{err}. Use --yes to skip confirmation in non-interactive shells.")
+            })?;
+        if !confirm {
+            print_line(ctx, "Cancelled.");
+            return Ok(());
+        }
+    }
+
+    // Use v1 API — the v2 DELETE /spaces/{id} endpoint does not support space deletion.
+    let url = client.v1_url(&format!("/space/{space_key}"));
+    client.delete(url).await?;
+    print_line(ctx, &format!("Deleted space {space_key}"));
+    Ok(())
 }

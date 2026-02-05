@@ -1,7 +1,10 @@
 #[cfg(feature = "write")]
 use anyhow::Context;
 use anyhow::Result;
-use confcli::output::{print_json, print_kv, print_table_with_count};
+use confcli::output::{
+    OutputFormat, print_json, print_kv, print_markdown_kv, print_markdown_table_with_count,
+    print_table_with_count,
+};
 use humansize::{BINARY, format_size};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -14,13 +17,6 @@ pub fn maybe_print_json<T: serde::Serialize>(ctx: &AppContext, value: &T) -> Res
         return Ok(());
     }
     print_json(value)
-}
-
-pub fn maybe_print_table_with_count(ctx: &AppContext, headers: &[&str], rows: Vec<Vec<String>>) {
-    if ctx.quiet {
-        return;
-    }
-    print_table_with_count(headers, rows);
 }
 
 pub fn maybe_print_kv(ctx: &AppContext, rows: Vec<Vec<String>>) {
@@ -74,10 +70,31 @@ pub fn add_markdown_header(base_url: &str, json: &Value, markdown: &str) -> Stri
     }
 }
 
-pub fn markdown_not_supported() -> Result<()> {
-    Err(anyhow::anyhow!(
-        "Markdown output is only supported for page get/body"
-    ))
+/// Print tabular data respecting the output format (Table or Markdown).
+pub fn maybe_print_rows(
+    ctx: &AppContext,
+    format: OutputFormat,
+    headers: &[&str],
+    rows: Vec<Vec<String>>,
+) {
+    if ctx.quiet {
+        return;
+    }
+    match format {
+        OutputFormat::Markdown => print_markdown_table_with_count(headers, rows),
+        _ => print_table_with_count(headers, rows),
+    }
+}
+
+/// Print key-value data respecting the output format (Table or Markdown).
+pub fn maybe_print_kv_fmt(ctx: &AppContext, format: OutputFormat, rows: Vec<Vec<String>>) {
+    if ctx.quiet {
+        return;
+    }
+    match format {
+        OutputFormat::Markdown => print_markdown_kv(rows),
+        _ => print_kv(rows),
+    }
 }
 
 pub fn url_with_query(base: &str, pairs: &[(&str, String)]) -> Result<String> {

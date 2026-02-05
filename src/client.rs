@@ -147,7 +147,7 @@ impl ApiClient {
                     }
 
                     let body = response.text().await.unwrap_or_default();
-                    bail!("Request failed: {status} {body}");
+                    bail!("{}", friendly_error(status, &body));
                 }
                 Err(e) => {
                     if attempts < MAX_ATTEMPTS {
@@ -212,7 +212,7 @@ impl ApiClient {
                     }
 
                     let body = response.text().await.unwrap_or_default();
-                    bail!("Request failed: {status} {body}");
+                    bail!("{}", friendly_error(status, &body));
                 }
                 Err(e) => {
                     if attempts < MAX_ATTEMPTS {
@@ -350,6 +350,36 @@ fn jitter(max: Duration) -> Duration {
     }
     let ms = nanos % max_ms;
     Duration::from_millis(ms)
+}
+
+/// Produce a human-friendly error message from an HTTP status + body.
+fn friendly_error(status: reqwest::StatusCode, body: &str) -> String {
+    // Extract the title field from Confluence error JSON (best-effort).
+    let title = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| {
+            v.get("errors")
+                .and_then(|e| e.as_array())
+                .and_then(|a| a.first())
+                .and_then(|e| e.get("title"))
+                .and_then(|t| t.as_str())
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    v.get("message")
+                        .and_then(|m| m.as_str())
+                        .map(|s| s.to_string())
+                })
+        });
+
+    if status == 409 {
+        return "Conflict: the page was modified concurrently. Fetch the latest version and retry your update.".to_string();
+    }
+
+    if let Some(title) = title {
+        format!("{status}: {title}")
+    } else {
+        format!("Request failed: {status} {body}")
+    }
 }
 
 fn request_id(headers: &HeaderMap) -> Option<String> {

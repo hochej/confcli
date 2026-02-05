@@ -90,3 +90,52 @@ fn print_trimmed(table: &Table) {
         println!("{}", line.trim_end());
     }
 }
+
+// --- Markdown output ---
+
+fn escape_md_cell(s: &str) -> String {
+    s.replace('|', "\\|").replace('\n', " ")
+}
+
+pub fn print_markdown_table(headers: &[&str], rows: Vec<Vec<String>>) {
+    if rows.is_empty() {
+        println!("No results found.");
+        return;
+    }
+    let header_line = format!("| {} |", headers.join(" | "));
+    let sep_line = format!(
+        "| {} |",
+        headers
+            .iter()
+            .map(|_| "---")
+            .collect::<Vec<_>>()
+            .join(" | ")
+    );
+    println!("{header_line}");
+    println!("{sep_line}");
+    for row in rows {
+        let escaped: Vec<String> = row.iter().map(|c| escape_md_cell(c)).collect();
+        println!("| {} |", escaped.join(" | "));
+    }
+}
+
+pub fn print_markdown_table_with_count(headers: &[&str], rows: Vec<Vec<String>>) {
+    let count = rows.len();
+    print_markdown_table(headers, rows);
+    if count > 0 {
+        let label = if count == 1 { "result" } else { "results" };
+        println!("\n*{count} {label}*");
+    }
+}
+
+pub fn print_markdown_kv(rows: Vec<Vec<String>>) {
+    for row in rows {
+        if row.len() >= 2 {
+            println!(
+                "**{}** {}",
+                escape_md_cell(&row[0]),
+                escape_md_cell(&row[1])
+            );
+        }
+    }
+}

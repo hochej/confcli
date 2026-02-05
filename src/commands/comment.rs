@@ -26,13 +26,11 @@ pub async fn handle(ctx: &AppContext, cmd: CommentCommand) -> Result<()> {
 
 async fn comment_list(client: &ApiClient, ctx: &AppContext, args: CommentListArgs) -> Result<()> {
     let page_id = resolve_page_id(client, &args.page).await?;
+    let expand =
+        "body.storage,history,version,extensions.inlineProperties,extensions.resolution,ancestors";
     let mut pairs = vec![
         ("limit", args.limit.to_string()),
-        (
-            "expand",
-            "body.storage,history,version,extensions.inlineProperties,extensions.resolution,ancestors"
-                .to_string(),
-        ),
+        ("expand", expand.to_string()),
     ];
     if let Some(location) = args.location {
         for value in location
@@ -48,12 +46,31 @@ async fn comment_list(client: &ApiClient, ctx: &AppContext, args: CommentListArg
         &client.v1_url(&format!("/content/{page_id}/child/comment")),
         &pairs,
     )?;
-    let items = client.get_paginated_results(url, args.all).await?;
+    let top_level = client.get_paginated_results(url, args.all).await?;
+
+    // Also fetch replies (child comments) for each top-level comment.
+    let mut all_items = Vec::new();
+    for item in &top_level {
+        all_items.push(item.clone());
+        let comment_id = json_str(item, "id");
+        if comment_id.is_empty() {
+            continue;
+        }
+        let child_url = url_with_query(
+            &client.v1_url(&format!("/content/{comment_id}/child/comment")),
+            &[
+                ("limit", args.limit.to_string()),
+                ("expand", expand.to_string()),
+            ],
+        )?;
+        let children = client.get_paginated_results(child_url, args.all).await?;
+        all_items.extend(children);
+    }
 
     match args.output {
-        OutputFormat::Json => maybe_print_json(ctx, &items),
-        OutputFormat::Table => {
-            let rows = items
+        OutputFormat::Json => maybe_print_json(ctx, &all_items),
+        fmt => {
+            let rows = all_items
                 .iter()
                 .map(|item| {
                     let created = item
@@ -77,14 +94,14 @@ async fn comment_list(client: &ApiClient, ctx: &AppContext, args: CommentListArg
                     ]
                 })
                 .collect();
-            maybe_print_table_with_count(
+            maybe_print_rows(
                 ctx,
+                fmt,
                 &["ID", "Location", "Author", "Created", "Parent"],
                 rows,
             );
             Ok(())
         }
-        OutputFormat::Markdown => markdown_not_supported(),
     }
 }
 
@@ -97,7 +114,8 @@ async fn comment_add(client: &ApiClient, ctx: &AppContext, args: CommentAddArgs)
         return Ok(());
     }
 
-    let body = read_body(args.body, args.body_file.as_ref()).await?;
+    let body_text = args.body.or(args.message);
+    let body = read_body(body_text, args.body_file.as_ref()).await?;
     let format = args.body_format.to_lowercase();
     let storage_value = match format.as_str() {
         "storage" => body,
@@ -144,15 +162,14 @@ async fn comment_add(client: &ApiClient, ctx: &AppContext, args: CommentAddArgs)
     let result = client.post_json(url, payload).await?;
     match args.output {
         OutputFormat::Json => maybe_print_json(ctx, &result),
-        OutputFormat::Table => {
+        fmt => {
             let rows = vec![
                 vec!["ID".to_string(), json_str(&result, "id")],
                 vec!["Status".to_string(), json_str(&result, "status")],
             ];
-            maybe_print_kv(ctx, rows);
+            maybe_print_kv_fmt(ctx, fmt, rows);
             Ok(())
         }
-        OutputFormat::Markdown => markdown_not_supported(),
     }
 }
 

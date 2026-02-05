@@ -60,7 +60,7 @@ Every command supports `--help` for full usage details.
 | Command | Description |
 |---|---|
 | `confcli auth login/status` | Authenticate and verify credentials |
-| `confcli space list/get/pages` | Browse spaces and page trees (`--tree` for hierarchy) |
+| `confcli space list/get/pages/create/delete` | Browse and manage spaces (`--tree` for hierarchy) |
 | `confcli page get/body/history/open` | Read pages — by ID or `Space:Title` |
 | `confcli page create/update/delete` | Write pages (accepts `--body` or `--body-file`) |
 | `confcli page edit` | Edit a page in your `$EDITOR` (`--format adf`, `--diff`) |
