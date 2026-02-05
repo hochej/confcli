@@ -60,6 +60,17 @@ A pre-commit hook runs all three checks automatically. CI mirrors the same steps
 4. Add integration tests in `tests/cli.rs`.
 5. Update `README.md` command table and `CHANGELOG.md`.
 
+## Documentation hygiene
+
+Before committing and pushing, always check whether your changes require updates to:
+
+1. **`AGENTS.md`** (this file) — if you changed conventions, code layout, added pitfalls, or altered workflows.
+2. **`skill/SKILL.md`** — if you added/removed/renamed commands, changed flags, or altered CLI behaviour. This file is used by AI agents to know how to operate confcli.
+3. **`README.md`** — if user-facing commands or features changed.
+4. **`CHANGELOG.md`** — always, for every version bump.
+
+These files must never drift from the actual code. If you add a new command, it must appear in all four. If you rename a flag, update all references.
+
 ## Common pitfalls
 
 - Empty strings pass `str::chars().all(...)` checks (vacuous truth) — always guard with `!s.is_empty()`.
