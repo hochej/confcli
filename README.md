@@ -26,6 +26,12 @@ chmod +x confcli && mv confcli ~/.local/bin/   # ensure ~/.local/bin is in PATH
 cargo install confcli
 ```
 
+For a **read-only build** (all write commands like create, update, delete are hidden):
+
+```bash
+cargo install confcli --no-default-features
+```
+
 <details>
 <summary>Shell completions</summary>
 
@@ -71,6 +77,7 @@ Every command supports `--help` for full usage details.
 - **Dry run** — Use `--dry-run` before any destructive operation to preview what would happen.
 - **`Space:Title` addressing** — Reference pages as `MFS:Overview` instead of numeric IDs.
 - **Piping** — `--body-file -` reads from stdin; combine with other tools.
+- **Read-only mode** — Compile with `--no-default-features` to strip all write commands. Useful for shared tooling where you want to prevent accidental modifications.
 
 ## Authentication & Security
 
