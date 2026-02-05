@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.2] - 2026-02-05
+
+### Fixed
+
+- **Attachment downloads broken on Confluence Cloud** — download URLs were missing the `/wiki` path prefix, causing 404s in both `export` and `attachment download` commands
+- **`attachment download`** now uses the shared `attachment_download_url` helper instead of duplicated inline logic
+- **Empty page/space references** (`page get ""`) no longer return empty results; they now error with a helpful message
+
+### Added
+
+- Unit tests for attachment download URL construction (with/without `/wiki` prefix, absolute URLs)
+
 ## [0.2.1] - 2026-02-05
 
 ### Fixed

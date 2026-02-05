@@ -38,12 +38,32 @@ pub async fn fetch_page_with_body_format(
     Ok((json, body))
 }
 
-pub fn attachment_download_url(origin: &Url, download: &str) -> Result<Url> {
+/// Build the full download URL for an attachment.
+///
+/// `base` is typically the site URL (e.g. `https://example.atlassian.net/wiki`).
+/// `download` is the relative path from the API (e.g. `/download/attachments/123/file.png`).
+///
+/// `Url::join` treats paths starting with `/` as relative to the *origin*, which
+/// would drop the `/wiki` prefix on Confluence Cloud.  We work around this by
+/// prepending the base path prefix when the download link is absolute.
+pub fn attachment_download_url(base: &Url, download: &str) -> Result<Url> {
     if download.starts_with("http://") || download.starts_with("https://") {
         return Url::parse(download).context("Invalid attachment download URL");
     }
-    origin
-        .join(download)
+
+    // For absolute paths (starting with /), prepend the base URL's path prefix
+    // (e.g. "/wiki") so it isn't lost during resolution.
+    if download.starts_with('/') {
+        let prefix = base.path().trim_end_matches('/');
+        if !prefix.is_empty() && !download.starts_with(prefix) {
+            let prefixed = format!("{prefix}{download}");
+            return base
+                .join(&prefixed)
+                .with_context(|| format!("Invalid attachment download link '{download}'"));
+        }
+    }
+
+    base.join(download)
         .with_context(|| format!("Invalid attachment download link '{download}'"))
 }
 
@@ -210,4 +230,51 @@ fn chronoish_now_for_filename() -> String {
         .unwrap_or_default()
         .as_millis();
     format!("{ms}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn download_url_prepends_wiki_prefix() {
+        let base = Url::parse("https://example.atlassian.net/wiki").unwrap();
+        let result =
+            attachment_download_url(&base, "/download/attachments/123/file.png?version=1&api=v2")
+                .unwrap();
+        assert_eq!(
+            result.as_str(),
+            "https://example.atlassian.net/wiki/download/attachments/123/file.png?version=1&api=v2"
+        );
+    }
+
+    #[test]
+    fn download_url_no_prefix() {
+        let base = Url::parse("https://example.com").unwrap();
+        let result =
+            attachment_download_url(&base, "/download/attachments/123/file.png?version=1").unwrap();
+        assert_eq!(
+            result.as_str(),
+            "https://example.com/download/attachments/123/file.png?version=1"
+        );
+    }
+
+    #[test]
+    fn download_url_absolute() {
+        let base = Url::parse("https://example.atlassian.net/wiki").unwrap();
+        let result = attachment_download_url(&base, "https://cdn.example.com/file.png").unwrap();
+        assert_eq!(result.as_str(), "https://cdn.example.com/file.png");
+    }
+
+    #[test]
+    fn download_url_already_has_prefix() {
+        let base = Url::parse("https://example.atlassian.net/wiki").unwrap();
+        let result =
+            attachment_download_url(&base, "/wiki/download/attachments/123/file.png?version=1")
+                .unwrap();
+        assert_eq!(
+            result.as_str(),
+            "https://example.atlassian.net/wiki/download/attachments/123/file.png?version=1"
+        );
+    }
 }

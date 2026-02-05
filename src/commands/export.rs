@@ -113,7 +113,7 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
 
         let sem = Arc::new(Semaphore::new(args.concurrency.max(1)));
         let client = Arc::new(client.clone());
-        let origin = Url::parse(client.origin_url())?;
+        let origin = Url::parse(client.base_url())?;
         let quiet = ctx.quiet;
 
         let total_bar = if ctx.quiet {

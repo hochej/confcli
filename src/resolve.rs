@@ -10,7 +10,7 @@ use std::sync::{Mutex, OnceLock};
 static SPACE_KEY_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
 pub async fn resolve_page_id(client: &ApiClient, page: &str) -> Result<String> {
-    if page.chars().all(|c| c.is_ascii_digit()) {
+    if !page.is_empty() && page.chars().all(|c| c.is_ascii_digit()) {
         return Ok(page.to_string());
     }
     if let Ok(url) = Url::parse(page)
@@ -42,7 +42,7 @@ pub async fn resolve_page_id(client: &ApiClient, page: &str) -> Result<String> {
 }
 
 pub async fn resolve_space_id(client: &ApiClient, space: &str) -> Result<String> {
-    if space.chars().all(|c| c.is_ascii_digit()) {
+    if !space.is_empty() && space.chars().all(|c| c.is_ascii_digit()) {
         return Ok(space.to_string());
     }
     let url = client.v2_url(&format!("/spaces?keys={space}&limit=1"));

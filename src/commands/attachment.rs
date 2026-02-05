@@ -104,11 +104,7 @@ async fn attachment_download(
         })
         .context("Missing download link")?;
     let base = Url::parse(client.base_url())?;
-    let full_url = if download.starts_with("http") {
-        Url::parse(download)?
-    } else {
-        base.join(download)?
-    };
+    let full_url = crate::download::attachment_download_url(&base, download)?;
     let response = client
         .apply_auth(client.http().get(full_url))?
         .send()
