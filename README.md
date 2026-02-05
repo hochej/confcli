@@ -14,16 +14,11 @@
 
 ### Binary (recommended)
 
-Download the latest release for your platform from
-[GitHub Releases](https://github.com/hochej/confcli/releases).
+Download the latest release from [GitHub Releases](https://github.com/hochej/confcli/releases).
 
 ```bash
-# macOS / Linux
-chmod +x confcli
-mv confcli ~/.local/bin/
+chmod +x confcli && mv confcli ~/.local/bin/   # ensure ~/.local/bin is in PATH
 ```
-
-> Make sure `~/.local/bin` is in your `PATH`.
 
 ### Cargo
 
@@ -31,37 +26,22 @@ mv confcli ~/.local/bin/
 cargo install confcli
 ```
 
-### Shell Completions
+<details>
+<summary>Shell completions</summary>
 
-Bash:
 ```bash
-confcli completions bash > /usr/local/etc/bash_completion.d/confcli
+confcli completions bash > /usr/local/etc/bash_completion.d/confcli   # Bash
+confcli completions zsh  > ~/.zsh/completions/_confcli                # Zsh
+confcli completions fish > ~/.config/fish/completions/confcli.fish    # Fish
 ```
-
-Zsh:
-```bash
-confcli completions zsh > ~/.zsh/completions/_confcli
-```
-
-Fish:
-```bash
-confcli completions fish > ~/.config/fish/completions/confcli.fish
-```
+</details>
 
 ## Quick Start
 
 ```bash
-# Login (interactive prompts for domain/email/token)
-confcli auth login
-
-# Or provide credentials directly
-confcli auth login --domain yourcompany.atlassian.net --email you@example.com --token <api-token>
-
-# Verify authentication
-confcli auth status
-
-# List spaces
-confcli space list
+confcli auth login                     # Interactive prompts for domain/email/token
+confcli auth status                    # Verify authentication
+confcli space list                     # List all spaces
 ```
 
 > **Tip:** Generate an API token at
@@ -69,137 +49,45 @@ confcli space list
 
 ## Commands
 
-### Spaces
+Every command supports `--help` for full usage details.
 
-```bash
-confcli space list                     # List all spaces
-confcli space list --all               # Fetch all pages of results
-confcli space get MFS                  # Get space by key
-confcli space pages MFS                # List pages in space
-confcli space pages MFS --tree         # Show page hierarchy
-```
+| Command | Description |
+|---|---|
+| `confcli auth login/status` | Authenticate and verify credentials |
+| `confcli space list/get/pages` | Browse spaces and page trees (`--tree` for hierarchy) |
+| `confcli page get/body/history/open` | Read pages — by ID or `Space:Title` |
+| `confcli page create/update/delete` | Write pages (accepts `--body` or `--body-file`) |
+| `confcli page edit` | Edit a page in your `$EDITOR` (`--format adf`, `--diff`) |
+| `confcli search` | Full-text or CQL search (`--space` to scope) |
+| `confcli attachment list/upload/download/delete` | Manage page attachments |
+| `confcli label list/add/remove/pages` | Tag pages and find pages by label |
+| `confcli comment list/add/delete` | Page comments |
+| `confcli export` | Export page + attachments (`--format md\|storage`, `--pattern`) |
+| `confcli copy-tree` | Deep-copy a page tree (`--exclude`, `--dry-run`) |
 
-### Pages
+### Key features
 
-```bash
-confcli page list --space MFS          # List pages in space
-confcli page get 12345                 # Get page by ID
-confcli page get MFS:Overview          # Get page by Space:Title
-confcli page body MFS:Overview         # Get page body as markdown
-confcli page body MFS:Overview --format storage   # Raw storage format
-confcli page history MFS:Overview      # Show version history
-confcli page open MFS:Overview         # Open page in browser
+- **Output formats** — All commands accept `-o json`, `-o table` (default), or `-o md`.
+- **Dry run** — Use `--dry-run` before any destructive operation to preview what would happen.
+- **`Space:Title` addressing** — Reference pages as `MFS:Overview` instead of numeric IDs.
+- **Piping** — `--body-file -` reads from stdin; combine with other tools.
 
-# Create page
-confcli page create --space MFS --title "New Page" --body "<p>Hello</p>"
-echo "<p>Hello</p>" | confcli page create --space MFS --title "New Page" --body-file -
+## Authentication & Security
 
-# Update page
-confcli page update MFS:Overview --body-file content.html
+Credentials are stored as plaintext JSON with `0600` permissions:
 
-# Delete page
-confcli page delete 12345
-confcli page delete 12345 --purge      # Permanent deletion
-```
+| OS | Path |
+|---|---|
+| Linux | `~/.config/confcli/config.json` (or `$XDG_CONFIG_HOME`) |
+| macOS | `~/Library/Application Support/confcli/config.json` |
+| Windows | `%APPDATA%\confcli\config.json` |
 
-### Search
-
-```bash
-confcli search "meeting notes"         # Text search
-confcli search "type=page AND title ~ Template"   # CQL query
-confcli search "confluence" --space MFS           # Search within space
-```
-
-### Attachments
-
-```bash
-confcli attachment list --page MFS:Overview
-confcli attachment download att12345 --dest file.png
-confcli attachment upload MFS:Overview ./image.png
-confcli attachment delete att12345
-```
-
-### Labels
-
-```bash
-confcli label list
-confcli label add MFS:Overview "important"
-confcli label remove MFS:Overview "important"
-confcli label pages "important"        # Find pages with label
-```
-
-### Comments
-
-```bash
-confcli comment list MFS:Overview
-confcli comment add MFS:Overview --body "LGTM"
-confcli comment delete 123456
-```
-
-### Export
-
-```bash
-confcli export MFS:Overview --dest ./exports --format md
-confcli export MFS:Overview --dest ./exports --format storage --skip-attachments
-confcli export MFS:Overview --dest ./exports --pattern "*.png"
-```
-
-### Copy Tree
-
-```bash
-confcli copy-tree MFS:Overview MFS:TargetParent
-confcli copy-tree MFS:Overview MFS:TargetParent "Overview (Backup)" --exclude "*draft*"
-confcli --dry-run copy-tree MFS:Overview MFS:TargetParent
-```
-
-### Edit
-
-```bash
-confcli page edit MFS:Overview
-confcli page edit MFS:Overview --format adf --diff
-```
-
-### Output Formats
-
-All commands support `-o` for output format:
-
-```bash
-confcli space list -o json             # JSON output
-confcli space list -o table            # Table output (default)
-confcli page get MFS:Overview -o md    # Markdown output
-```
-
-### Dry Run
-
-Use `--dry-run` to preview destructive operations without executing them:
-
-```bash
-confcli --dry-run page create --space MFS --title "Test" --body "<p>Hello</p>"
-confcli --dry-run page delete 12345
-confcli --dry-run label add MFS:Overview "important"
-```
-
-## Security
-
-Credentials are stored as plaintext JSON in your OS config directory:
-
-- Linux: `~/.config/confcli/config.json` (or `$XDG_CONFIG_HOME/confcli/config.json`)
-- macOS: `~/Library/Application Support/confcli/config.json`
-- Windows: `%APPDATA%\\confcli\\config.json`
-
-`confcli auth status` prints the resolved config path when using file-based auth.
-On Unix systems the file is created with `0600` permissions (owner read/write only).
-
-For CI/CD or shared environments, use environment variables instead of the config file:
+For CI/CD or shared environments, use environment variables instead:
 
 ```bash
 export CONFLUENCE_DOMAIN=yourcompany.atlassian.net
 export CONFLUENCE_EMAIL=you@example.com
-export CONFLUENCE_TOKEN=<api-token>
-# Also accepted (compat with other CLIs):
-export CONFLUENCE_API_TOKEN=<api-token>
-# Override API path if your instance is weird/proxied or you're on Server/DC:
-export CONFLUENCE_API_PATH=/wiki/rest/api   # or /rest/api
-# Or for OAuth:
-export CONFLUENCE_BEARER_TOKEN=<bearer-token>
+export CONFLUENCE_TOKEN=<api-token>          # or CONFLUENCE_API_TOKEN
+export CONFLUENCE_BEARER_TOKEN=<bearer>      # for OAuth
+export CONFLUENCE_API_PATH=/wiki/rest/api    # override for Server/DC or proxied instances
 ```
