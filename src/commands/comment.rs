@@ -122,10 +122,10 @@ async fn comment_add(client: &ApiClient, ctx: &AppContext, args: CommentAddArgs)
     }
 
     let mut extensions = serde_json::Map::new();
-    if let Some(location) = args.location {
-        if !location.trim().is_empty() {
-            extensions.insert("location".to_string(), Value::String(location));
-        }
+    if let Some(location) = args.location
+        && !location.trim().is_empty()
+    {
+        extensions.insert("location".to_string(), Value::String(location));
     }
     if let Some(inline) = args.inline_properties {
         let parsed: Value =
@@ -210,10 +210,10 @@ fn comment_parent_id(item: &serde_json::Value) -> Option<String> {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_lowercase();
-        if ty == "comment" {
-            if let Some(id) = a.get("id").and_then(|v| v.as_str()) {
-                last = Some(id.to_string());
-            }
+        if ty == "comment"
+            && let Some(id) = a.get("id").and_then(|v| v.as_str())
+        {
+            last = Some(id.to_string());
         }
     }
     last

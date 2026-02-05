@@ -119,32 +119,32 @@ fn decode_unicode_escapes(input: &str) -> String {
     let mut out = String::new();
     let mut i = 0;
     while i < chars.len() {
-        if chars[i] == '\\' && i + 5 < chars.len() && chars[i + 1] == 'u' {
-            if let Some(code) = parse_hex4(&chars[i + 2..i + 6]) {
-                if (0xD800..=0xDBFF).contains(&code)
-                    && i + 11 < chars.len()
-                    && chars[i + 6] == '\\'
-                    && chars[i + 7] == 'u'
-                {
-                    if let Some(low) = parse_hex4(&chars[i + 8..i + 12]) {
-                        if (0xDC00..=0xDFFF).contains(&low) {
-                            let high_ten = (code - 0xD800) as u32;
-                            let low_ten = (low - 0xDC00) as u32;
-                            let scalar = 0x10000 + ((high_ten << 10) | low_ten);
-                            if let Some(ch) = char::from_u32(scalar) {
-                                out.push(ch);
-                                i += 12;
-                                continue;
-                            }
-                        }
-                    }
-                }
-
-                if let Some(ch) = char::from_u32(code as u32) {
+        if chars[i] == '\\'
+            && i + 5 < chars.len()
+            && chars[i + 1] == 'u'
+            && let Some(code) = parse_hex4(&chars[i + 2..i + 6])
+        {
+            if (0xD800..=0xDBFF).contains(&code)
+                && i + 11 < chars.len()
+                && chars[i + 6] == '\\'
+                && chars[i + 7] == 'u'
+                && let Some(low) = parse_hex4(&chars[i + 8..i + 12])
+                && (0xDC00..=0xDFFF).contains(&low)
+            {
+                let high_ten = (code - 0xD800) as u32;
+                let low_ten = (low - 0xDC00) as u32;
+                let scalar = 0x10000 + ((high_ten << 10) | low_ten);
+                if let Some(ch) = char::from_u32(scalar) {
                     out.push(ch);
-                    i += 6;
+                    i += 12;
                     continue;
                 }
+            }
+
+            if let Some(ch) = char::from_u32(code as u32) {
+                out.push(ch);
+                i += 6;
+                continue;
             }
         }
         out.push(chars[i]);

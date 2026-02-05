@@ -40,11 +40,11 @@ pub async fn fetch_page_with_body_format(
 
 pub fn attachment_download_url(origin: &Url, download: &str) -> Result<Url> {
     if download.starts_with("http://") || download.starts_with("https://") {
-        return Ok(Url::parse(download).context("Invalid attachment download URL")?);
+        return Url::parse(download).context("Invalid attachment download URL");
     }
-    Ok(origin
+    origin
         .join(download)
-        .with_context(|| format!("Invalid attachment download link '{download}'"))?)
+        .with_context(|| format!("Invalid attachment download link '{download}'"))
 }
 
 pub async fn download_to_file_with_retry(
@@ -121,10 +121,10 @@ pub async fn download_to_file_with_retry(
         }
 
         let total = response.content_length();
-        if let (Some(bar), Some(total)) = (progress, total) {
-            if bar.length().is_none() {
-                bar.set_length(total);
-            }
+        if let (Some(bar), Some(total)) = (progress, total)
+            && bar.length().is_none()
+        {
+            bar.set_length(total);
         }
 
         let mut file = tokio::fs::File::create(&tmp)

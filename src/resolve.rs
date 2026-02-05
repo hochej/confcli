@@ -13,10 +13,10 @@ pub async fn resolve_page_id(client: &ApiClient, page: &str) -> Result<String> {
     if page.chars().all(|c| c.is_ascii_digit()) {
         return Ok(page.to_string());
     }
-    if let Ok(url) = Url::parse(page) {
-        if let Some(id) = extract_page_id_from_url(&url) {
-            return Ok(id);
-        }
+    if let Ok(url) = Url::parse(page)
+        && let Some(id) = extract_page_id_from_url(&url)
+    {
+        return Ok(id);
     }
     if let Some((space, title)) = page.split_once(':') {
         let space_id = resolve_space_id(client, space).await?;
@@ -56,12 +56,11 @@ pub async fn resolve_space_id(client: &ApiClient, space: &str) -> Result<String>
 }
 
 pub async fn resolve_space_key(client: &ApiClient, space_id: &str) -> Result<String> {
-    if let Some(cache) = SPACE_KEY_CACHE.get() {
-        if let Ok(guard) = cache.lock() {
-            if let Some(key) = guard.get(space_id) {
-                return Ok(key.clone());
-            }
-        }
+    if let Some(cache) = SPACE_KEY_CACHE.get()
+        && let Ok(guard) = cache.lock()
+        && let Some(key) = guard.get(space_id)
+    {
+        return Ok(key.clone());
     }
     let url = client.v2_url(&format!("/spaces/{}", space_id));
     let (json, _) = client.get_json(url).await?;
@@ -92,17 +91,17 @@ pub async fn resolve_space_keys(
 
     // Serve from cache when possible.
     let mut out: HashMap<String, String> = HashMap::new();
-    if let Some(cache) = SPACE_KEY_CACHE.get() {
-        if let Ok(guard) = cache.lock() {
-            unique.retain(|id| {
-                if let Some(key) = guard.get(id) {
-                    out.insert(id.clone(), key.clone());
-                    false
-                } else {
-                    true
-                }
-            });
-        }
+    if let Some(cache) = SPACE_KEY_CACHE.get()
+        && let Ok(guard) = cache.lock()
+    {
+        unique.retain(|id| {
+            if let Some(key) = guard.get(id) {
+                out.insert(id.clone(), key.clone());
+                false
+            } else {
+                true
+            }
+        });
     }
     if unique.is_empty() {
         return Ok(out);
@@ -144,12 +143,11 @@ pub async fn resolve_space_keys(
 
 pub fn extract_page_id_from_url(url: &Url) -> Option<String> {
     let segments: Vec<&str> = url.path_segments()?.collect();
-    if let Some(pos) = segments.iter().position(|seg| *seg == "pages") {
-        if let Some(id) = segments.get(pos + 1) {
-            if id.chars().all(|c| c.is_ascii_digit()) {
-                return Some(id.to_string());
-            }
-        }
+    if let Some(pos) = segments.iter().position(|seg| *seg == "pages")
+        && let Some(id) = segments.get(pos + 1)
+        && id.chars().all(|c| c.is_ascii_digit())
+    {
+        return Some(id.to_string());
     }
     url.query_pairs()
         .find(|(key, _)| key == "pageId")

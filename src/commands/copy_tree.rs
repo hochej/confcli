@@ -120,11 +120,11 @@ async fn copy_tree(client: &ApiClient, ctx: &AppContext, args: CopyTreeArgs) -> 
                 if blocked.contains(id) {
                     continue;
                 }
-                if let Some(parent) = &node.parent_id {
-                    if blocked.contains(parent) {
-                        blocked.insert(id.clone());
-                        changed = true;
-                    }
+                if let Some(parent) = &node.parent_id
+                    && blocked.contains(parent)
+                {
+                    blocked.insert(id.clone());
+                    changed = true;
                 }
             }
         }
@@ -184,10 +184,10 @@ async fn copy_tree(client: &ApiClient, ctx: &AppContext, args: CopyTreeArgs) -> 
             let res = fetch_page_with_body_format(&client, &id, "storage")
                 .await
                 .map(|(_, body)| (id, body));
-            if res.is_ok() {
-                if let Some(bar) = &bar {
-                    bar.inc(1);
-                }
+            if res.is_ok()
+                && let Some(bar) = &bar
+            {
+                bar.inc(1);
             }
             res
         }));
@@ -206,6 +206,7 @@ async fn copy_tree(client: &ApiClient, ctx: &AppContext, args: CopyTreeArgs) -> 
     let mut mapping: HashMap<String, String> = HashMap::new();
     let mut created: Vec<Value> = Vec::new();
 
+    #[allow(clippy::too_many_arguments)]
     fn walk<'a>(
         client: &'a ApiClient,
         ctx: &'a AppContext,

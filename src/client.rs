@@ -98,12 +98,11 @@ impl ApiClient {
     /// Parse a Retry-After header value (integer seconds), falling back to
     /// exponential backoff: 2^(attempt-1) seconds.
     pub fn retry_wait_from_headers(headers: &HeaderMap, attempt: u32) -> Duration {
-        if let Some(val) = headers.get("retry-after") {
-            if let Ok(s) = val.to_str() {
-                if let Ok(secs) = s.trim().parse::<u64>() {
-                    return Duration::from_secs(secs) + jitter(Duration::from_millis(250));
-                }
-            }
+        if let Some(val) = headers.get("retry-after")
+            && let Ok(s) = val.to_str()
+            && let Ok(secs) = s.trim().parse::<u64>()
+        {
+            return Duration::from_secs(secs) + jitter(Duration::from_millis(250));
         }
         Duration::from_secs(2u64.pow(attempt - 1)) + jitter(Duration::from_millis(250))
     }
@@ -361,12 +360,12 @@ fn request_id(headers: &HeaderMap) -> Option<String> {
         "x-b3-traceid",
         "traceparent",
     ] {
-        if let Some(val) = headers.get(key) {
-            if let Ok(s) = val.to_str() {
-                let trimmed = s.trim();
-                if !trimmed.is_empty() {
-                    return Some(trimmed.to_string());
-                }
+        if let Some(val) = headers.get(key)
+            && let Ok(s) = val.to_str()
+        {
+            let trimmed = s.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
             }
         }
     }

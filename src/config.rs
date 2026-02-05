@@ -49,7 +49,7 @@ impl Config {
         let base_input = env::var("CONFLUENCE_BASE_URL")
             .ok()
             .or_else(|| env::var("CONFLUENCE_URL").ok())
-            .or_else(|| env::var("CONFLUENCE_DOMAIN").ok().map(|domain| domain));
+            .or_else(|| env::var("CONFLUENCE_DOMAIN").ok());
 
         let base_input = match base_input {
             Some(url) => url,
