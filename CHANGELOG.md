@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1] - 2026-02-05
+
+### Fixed
+
+- **`space create --description`** now works — switched to v1 API since v2 silently ignores the description field
+- **`json_str` helper** now handles numeric and boolean JSON values (fixes empty ID display with v1 API responses)
+
 ## [0.2.0] - 2026-02-05
 
 ### Added

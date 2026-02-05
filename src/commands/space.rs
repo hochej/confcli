@@ -154,7 +154,8 @@ async fn space_create(client: &ApiClient, ctx: &AppContext, args: SpaceCreateArg
         });
     }
 
-    let url = client.v2_url("/spaces");
+    // Use v1 API because the v2 endpoint ignores the description field.
+    let url = client.v1_url("/space");
     let result = client.post_json(url, payload).await?;
 
     match args.output {
