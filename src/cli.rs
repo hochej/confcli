@@ -577,7 +577,12 @@ pub struct CommentListArgs {
     pub output: OutputFormat,
     #[arg(short = 'a', long, help = "Fetch all pages of results")]
     pub all: bool,
-    #[arg(short = 'n', long, default_value = "25", help = "Maximum number of results")]
+    #[arg(
+        short = 'n',
+        long,
+        default_value = "25",
+        help = "Maximum number of results"
+    )]
     pub limit: usize,
 }
 

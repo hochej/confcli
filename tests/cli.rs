@@ -48,7 +48,9 @@ fn page_help() {
         .args(["page", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("List, view, create, and manage pages"));
+        .stdout(predicate::str::contains(
+            "List, view, create, and manage pages",
+        ));
 }
 
 #[test]
@@ -66,7 +68,9 @@ fn attachment_help() {
         .args(["attachment", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("List, download, upload, and manage attachments"));
+        .stdout(predicate::str::contains(
+            "List, download, upload, and manage attachments",
+        ));
 }
 
 #[test]
@@ -75,7 +79,9 @@ fn label_help() {
         .args(["label", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("List, add, and remove page labels"));
+        .stdout(predicate::str::contains(
+            "List, add, and remove page labels",
+        ));
 }
 
 #[test]

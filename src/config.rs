@@ -155,7 +155,7 @@ fn normalize_site_url(input: &str) -> Result<String> {
         scheme => {
             return Err(anyhow::anyhow!(
                 "Invalid URL scheme '{scheme}'. Use http or https."
-            ))
+            ));
         }
     }
     if url.host_str().is_none() {
@@ -180,7 +180,7 @@ fn normalize_full_url(input: &str) -> Result<String> {
         scheme => {
             return Err(anyhow::anyhow!(
                 "Invalid URL scheme '{scheme}'. Use http or https."
-            ))
+            ));
         }
     }
     if url.host_str().is_none() {
