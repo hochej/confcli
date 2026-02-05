@@ -6,6 +6,10 @@
 
 <p align="center">A scrappy little Confluence CLI for you and your clanker</p>
 
+<p align="center">
+  <video src="https://github.com/hochej/confcli/raw/main/assets/demo.mp4" width="600" autoplay loop muted playsinline></video>
+</p>
+
 ## Installation
 
 ### Binary (recommended)

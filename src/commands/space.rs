@@ -2,9 +2,15 @@ use anyhow::Result;
 use confcli::client::ApiClient;
 use confcli::json_util::json_str;
 use confcli::output::OutputFormat;
+#[cfg(feature = "write")]
+use serde_json::json;
 
+#[cfg(feature = "write")]
+use crate::cli::SpaceCreateArgs;
 use crate::cli::{SpaceCommand, SpaceGetArgs, SpaceListArgs, SpacePagesArgs};
 use crate::context::AppContext;
+#[cfg(feature = "write")]
+use crate::helpers::print_line;
 use crate::helpers::{
     markdown_not_supported, maybe_print_json, maybe_print_kv, maybe_print_table_with_count,
     url_with_query,
@@ -17,6 +23,8 @@ pub async fn handle(ctx: &AppContext, cmd: SpaceCommand) -> Result<()> {
         SpaceCommand::List(args) => space_list(&client, ctx, args).await,
         SpaceCommand::Get(args) => space_get(&client, ctx, args).await,
         SpaceCommand::Pages(args) => space_pages(&client, ctx, args).await,
+        #[cfg(feature = "write")]
+        SpaceCommand::Create(args) => space_create(&client, ctx, args).await,
     }
 }
 
@@ -123,5 +131,45 @@ async fn space_pages(client: &ApiClient, ctx: &AppContext, args: SpacePagesArgs)
             }
             OutputFormat::Markdown => markdown_not_supported(),
         }
+    }
+}
+
+#[cfg(feature = "write")]
+async fn space_create(client: &ApiClient, ctx: &AppContext, args: SpaceCreateArgs) -> Result<()> {
+    if ctx.dry_run {
+        print_line(
+            ctx,
+            &format!("Would create space '{}' ({})", args.name, args.key),
+        );
+        return Ok(());
+    }
+
+    let mut payload = json!({
+        "key": args.key,
+        "name": args.name,
+    });
+    if let Some(desc) = args.description {
+        payload["description"] = json!({
+            "plain": { "value": desc, "representation": "plain" }
+        });
+    }
+
+    let url = client.v2_url("/spaces");
+    let result = client.post_json(url, payload).await?;
+
+    match args.output {
+        OutputFormat::Json => maybe_print_json(ctx, &result),
+        OutputFormat::Table => {
+            let rows = vec![
+                vec!["ID".to_string(), json_str(&result, "id")],
+                vec!["Key".to_string(), json_str(&result, "key")],
+                vec!["Name".to_string(), json_str(&result, "name")],
+                vec!["Type".to_string(), json_str(&result, "type")],
+                vec!["Status".to_string(), json_str(&result, "status")],
+            ];
+            maybe_print_kv(ctx, rows);
+            Ok(())
+        }
+        OutputFormat::Markdown => markdown_not_supported(),
     }
 }

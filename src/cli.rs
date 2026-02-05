@@ -121,6 +121,9 @@ pub enum SpaceCommand {
     Get(SpaceGetArgs),
     #[command(about = "List pages in a space")]
     Pages(SpacePagesArgs),
+    #[cfg(feature = "write")]
+    #[command(about = "Create a space")]
+    Create(SpaceCreateArgs),
 }
 
 #[derive(Args, Debug)]
@@ -177,6 +180,19 @@ pub struct SpacePagesArgs {
         help = "Maximum number of results"
     )]
     pub limit: usize,
+}
+
+#[cfg(feature = "write")]
+#[derive(Args, Debug)]
+pub struct SpaceCreateArgs {
+    #[arg(long, help = "Space key (uppercase, e.g. PROJ)")]
+    pub key: String,
+    #[arg(long, help = "Space name")]
+    pub name: String,
+    #[arg(long, help = "Space description")]
+    pub description: Option<String>,
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    pub output: OutputFormat,
 }
 
 // --- Page ---

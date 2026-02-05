@@ -139,14 +139,18 @@ async fn page_get(client: &ApiClient, ctx: &AppContext, args: PageGetArgs) -> Re
                     keep_empty_list_items: args.keep_empty_list_items,
                 },
             )?;
-            let with_header = add_markdown_header(client.base_url(), &view_json, &markdown);
-            println!("{with_header}");
+            let output = if ctx.quiet {
+                markdown
+            } else {
+                add_markdown_header(client.base_url(), &view_json, &markdown)
+            };
+            println!("{output}");
             Ok(())
         }
     }
 }
 
-async fn page_body(client: &ApiClient, _ctx: &AppContext, args: PageBodyArgs) -> Result<()> {
+async fn page_body(client: &ApiClient, ctx: &AppContext, args: PageBodyArgs) -> Result<()> {
     let page_id = resolve_page_id(client, &args.page).await?;
     let format = args.format.to_lowercase();
     match format.as_str() {
@@ -166,8 +170,12 @@ async fn page_body(client: &ApiClient, _ctx: &AppContext, args: PageBodyArgs) ->
                     keep_empty_list_items: args.keep_empty_list_items,
                 },
             )?;
-            let with_header = add_markdown_header(client.base_url(), &json, &markdown);
-            println!("{with_header}");
+            let output = if ctx.quiet {
+                markdown
+            } else {
+                add_markdown_header(client.base_url(), &json, &markdown)
+            };
+            println!("{output}");
             Ok(())
         }
         "view" => {
