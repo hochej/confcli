@@ -6,7 +6,7 @@ use confcli::output::OutputFormat;
 #[cfg(feature = "write")]
 use dialoguer::Confirm;
 #[cfg(feature = "write")]
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::cli::*;
 use crate::context::AppContext;
@@ -107,7 +107,7 @@ async fn comment_add(client: &ApiClient, ctx: &AppContext, args: CommentAddArgs)
             return Err(anyhow::anyhow!(
                 "Invalid body format: {}. Use storage, html, or markdown.",
                 args.body_format
-            ))
+            ));
         }
     };
 

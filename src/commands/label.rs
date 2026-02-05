@@ -2,9 +2,9 @@ use anyhow::Result;
 use confcli::client::ApiClient;
 use confcli::json_util::json_str;
 use confcli::output::OutputFormat;
+use serde_json::Value;
 #[cfg(feature = "write")]
 use serde_json::json;
-use serde_json::Value;
 
 use crate::cli::*;
 use crate::context::AppContext;

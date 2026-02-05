@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::ValueEnum;
-use comfy_table::{presets::NOTHING, Attribute, Cell, ContentArrangement, Table};
+use comfy_table::{Attribute, Cell, ContentArrangement, Table, presets::NOTHING};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use confcli::client::ApiClient;
 use confcli::json_util::json_str;
-use confcli::markdown::{html_to_markdown_with_options, MarkdownOptions};
+use confcli::markdown::{MarkdownOptions, html_to_markdown_with_options};
 use confcli::output::OutputFormat;
 use regex::Regex;
 use serde_json::json;
@@ -13,8 +13,8 @@ use url::Url;
 use crate::cli::ExportArgs;
 use crate::context::AppContext;
 use crate::download::{
-    attachment_download_url, download_to_file_with_retry, fetch_page_with_body_format,
-    sanitize_filename, unique_path, DownloadRetry,
+    DownloadRetry, attachment_download_url, download_to_file_with_retry,
+    fetch_page_with_body_format, sanitize_filename, unique_path,
 };
 use crate::helpers::*;
 use crate::resolve::{resolve_page_id, resolve_space_key};
@@ -58,7 +58,7 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
             return Err(anyhow::anyhow!(
                 "Invalid --format: {}. Use md, storage, or adf.",
                 args.format
-            ))
+            ));
         }
     };
 

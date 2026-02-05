@@ -2,11 +2,11 @@ use crate::auth::AuthMethod;
 use crate::pagination::{next_link_from_body, next_link_from_headers};
 #[cfg(feature = "write")]
 use anyhow::Context;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use base64::Engine;
 use http::HeaderMap;
 #[cfg(feature = "write")]
-use reqwest::{multipart, Body};
+use reqwest::{Body, multipart};
 use reqwest::{Client as HttpClient, Method, Response};
 use serde_json::Value;
 #[cfg(feature = "write")]

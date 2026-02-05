@@ -1,6 +1,6 @@
 use anyhow::Result;
 use htmd::HtmlToMarkdown;
-use pulldown_cmark::{html, Options, Parser};
+use pulldown_cmark::{Options, Parser, html};
 use regex::Regex;
 
 #[derive(Debug, Clone, Copy, Default)]

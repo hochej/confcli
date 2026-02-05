@@ -2,7 +2,7 @@
 use anyhow::Context;
 use anyhow::Result;
 use confcli::output::{print_json, print_kv, print_table_with_count};
-use humansize::{format_size, BINARY};
+use humansize::{BINARY, format_size};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use url::Url;

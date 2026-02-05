@@ -170,7 +170,7 @@ fn normalize_site_url_and_origin(input: &str) -> Result<(String, String)> {
         scheme => {
             return Err(anyhow::anyhow!(
                 "Invalid URL scheme '{scheme}'. Use http or https."
-            ))
+            ));
         }
     }
     let host = url

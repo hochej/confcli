@@ -2,13 +2,13 @@ use anyhow::{Context, Result};
 use confcli::client::ApiClient;
 use confcli::json_util::json_str;
 use confcli::markdown::{
-    decode_unicode_escapes_str, html_to_markdown_with_options, MarkdownOptions,
+    MarkdownOptions, decode_unicode_escapes_str, html_to_markdown_with_options,
 };
-use confcli::output::{print_json, OutputFormat};
+use confcli::output::{OutputFormat, print_json};
 #[cfg(feature = "write")]
 use dialoguer::Confirm;
 #[cfg(feature = "write")]
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::cli::*;
 use crate::context::AppContext;
@@ -228,7 +228,7 @@ async fn page_edit(client: &ApiClient, ctx: &AppContext, args: PageEditArgs) -> 
             return Err(anyhow::anyhow!(
                 "Invalid --format: {}. Use storage or adf.",
                 args.format
-            ))
+            ));
         }
     };
 
