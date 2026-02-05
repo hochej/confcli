@@ -12,13 +12,20 @@
 
 ## Installation
 
-### Binary (recommended)
-
-Download the latest release from [GitHub Releases](https://github.com/hochej/confcli/releases).
+### Quick install (recommended)
 
 ```bash
-chmod +x confcli && mv confcli ~/.local/bin/   # ensure ~/.local/bin is in PATH
+curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | sh
 ```
+
+Options via environment variables:
+
+```bash
+VERSION=0.2.3 curl -fsSL … | sh   # pin a specific version
+INSTALL_DIR=~/.bin curl -fsSL … | sh   # custom install directory
+```
+
+Or download a binary manually from [GitHub Releases](https://github.com/hochej/confcli/releases).
 
 ### Cargo
 
