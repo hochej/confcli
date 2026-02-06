@@ -105,47 +105,40 @@ async fn attachment_download(
         .context("Missing download link")?;
     let base = Url::parse(client.base_url())?;
     let full_url = crate::download::attachment_download_url(&base, download)?;
-    let response = client
-        .apply_auth(client.http().get(full_url))?
-        .send()
-        .await?;
-    if !response.status().is_success() {
-        return Err(anyhow::anyhow!("Download failed: {}", response.status()));
-    }
-    let total = response.content_length();
     let file_name = resolve_download_path(&args.dest, &json)?;
-    let mut file = tokio::fs::File::create(&file_name).await?;
-    let mut stream = response.bytes_stream();
 
     let progress = if ctx.quiet {
         None
-    } else if let Some(total) = total {
-        let bar = ProgressBar::new(total);
+    } else {
+        let bar = ProgressBar::new_spinner();
         bar.set_style(
             ProgressStyle::with_template(
                 "{spinner:.green} {bytes}/{total_bytes} {bar:40.cyan/blue} {eta}",
             )
             .unwrap(),
         );
-        Some(bar)
-    } else {
-        let bar = ProgressBar::new_spinner();
-        bar.set_style(ProgressStyle::with_template("{spinner:.green} {bytes} {elapsed}").unwrap());
         bar.enable_steady_tick(std::time::Duration::from_millis(120));
         Some(bar)
     };
 
-    use futures_util::StreamExt;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
-        tokio::io::AsyncWriteExt::write_all(&mut file, &chunk).await?;
-        if let Some(bar) = &progress {
-            bar.inc(chunk.len() as u64);
-        }
-    }
+    crate::download::download_to_file_with_retry(
+        client,
+        full_url,
+        &file_name,
+        &format!("attachment {}", args.attachment),
+        crate::download::DownloadToFileOptions {
+            retry: crate::download::DownloadRetry::default(),
+            progress: progress.as_ref(),
+            verbose: ctx.verbose,
+            quiet: ctx.quiet,
+        },
+    )
+    .await?;
+
     if let Some(bar) = progress {
         bar.finish_and_clear();
     }
+
     print_line(ctx, &format!("Downloaded to {}", file_name.display()));
     Ok(())
 }

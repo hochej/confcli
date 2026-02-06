@@ -17,7 +17,9 @@ pub async fn handle(ctx: &AppContext, cmd: SearchCommand) -> Result<()> {
     let client = crate::context::load_client(ctx)?;
     let mut cql = to_cql_query(&cmd.query);
     if let Some(space) = cmd.space {
-        cql = format!("space = {} AND ({cql})", space);
+        // Always quote + escape the space key to avoid CQL injection and to support keys like "~user".
+        let space = escape_cql_text(&space);
+        cql = format!("space = \"{space}\" AND ({cql})");
     }
     if cmd.all {
         let results = search_all(&client, &cql, cmd.limit).await?;

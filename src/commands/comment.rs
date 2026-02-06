@@ -26,12 +26,13 @@ pub async fn handle(ctx: &AppContext, cmd: CommentCommand) -> Result<()> {
 
 async fn comment_list(client: &ApiClient, ctx: &AppContext, args: CommentListArgs) -> Result<()> {
     let page_id = resolve_page_id(client, &args.page).await?;
-    let expand =
-        "body.storage,history,version,extensions.inlineProperties,extensions.resolution,ancestors";
-    let mut pairs = vec![
-        ("limit", args.limit.to_string()),
-        ("expand", expand.to_string()),
-    ];
+    // Keep expansions minimal for list output; allow opting into heavier expansions.
+    // The default is intentionally small to keep payload sizes reasonable.
+    let expand = args
+        .expand
+        .unwrap_or_else(|| "history,extensions,ancestors".to_string());
+
+    let mut pairs = vec![("limit", args.limit.to_string()), ("expand", expand)];
     if let Some(location) = args.location {
         for value in location
             .split(',')
@@ -42,30 +43,12 @@ async fn comment_list(client: &ApiClient, ctx: &AppContext, args: CommentListArg
         }
     }
 
+    // Use the descendant endpoint to fetch top-level comments and replies without N+1 requests.
     let url = url_with_query(
-        &client.v1_url(&format!("/content/{page_id}/child/comment")),
+        &client.v1_url(&format!("/content/{page_id}/descendant/comment")),
         &pairs,
     )?;
-    let top_level = client.get_paginated_results(url, args.all).await?;
-
-    // Also fetch replies (child comments) for each top-level comment.
-    let mut all_items = Vec::new();
-    for item in &top_level {
-        all_items.push(item.clone());
-        let comment_id = json_str(item, "id");
-        if comment_id.is_empty() {
-            continue;
-        }
-        let child_url = url_with_query(
-            &client.v1_url(&format!("/content/{comment_id}/child/comment")),
-            &[
-                ("limit", args.limit.to_string()),
-                ("expand", expand.to_string()),
-            ],
-        )?;
-        let children = client.get_paginated_results(child_url, args.all).await?;
-        all_items.extend(children);
-    }
+    let all_items = client.get_paginated_results(url, args.all).await?;
 
     match args.output {
         OutputFormat::Json => maybe_print_json(ctx, &all_items),

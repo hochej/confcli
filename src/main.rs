@@ -15,7 +15,11 @@ use context::AppContext;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    dotenvy::dotenv().ok();
+    // Never auto-load dotenv in release builds unless the user explicitly opts in.
+    // This avoids surprising auth overrides and reduces the risk of operating on the wrong tenant.
+    if cfg!(debug_assertions) || std::env::var_os("CONFCLI_LOAD_DOTENV").is_some() {
+        dotenvy::dotenv().ok();
+    }
     let cli = Cli::parse();
     let ctx = AppContext {
         quiet: cli.quiet,

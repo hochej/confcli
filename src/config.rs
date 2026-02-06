@@ -241,6 +241,10 @@ mod tests {
     use super::*;
     use crate::auth::AuthMethod;
 
+    // Mutating process env vars is global shared state. Rust 2024 makes these APIs `unsafe`
+    // for a reason: tests are parallel by default. Serialize any env-var mutations.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn normalize_site_url_cloud_defaults_to_wiki() {
         let url = normalize_site_url("example.atlassian.net").unwrap();
@@ -256,7 +260,9 @@ mod tests {
     #[test]
     fn backfills_api_bases_from_legacy_base_url() {
         // Ensure the test is not influenced by external env.
-        // SAFETY: Unit tests run single-threaded (cargo test -- --test-threads=1 if needed).
+        let _lock = ENV_LOCK.lock().unwrap();
+        let prev = std::env::var("CONFLUENCE_API_PATH").ok();
+        // SAFETY: guarded by ENV_LOCK.
         unsafe { std::env::remove_var("CONFLUENCE_API_PATH") };
 
         let mut cfg = Config {
@@ -274,5 +280,17 @@ mod tests {
             "https://example.atlassian.net/wiki/rest/api"
         );
         assert_eq!(cfg.api_base_v2, "https://example.atlassian.net/wiki/api/v2");
+
+        // Restore previous value.
+        match prev {
+            Some(value) => {
+                // SAFETY: guarded by ENV_LOCK.
+                unsafe { std::env::set_var("CONFLUENCE_API_PATH", value) };
+            }
+            None => {
+                // SAFETY: guarded by ENV_LOCK.
+                unsafe { std::env::remove_var("CONFLUENCE_API_PATH") };
+            }
+        }
     }
 }

@@ -1,13 +1,28 @@
 use anyhow::{Context, Result};
 use confcli::client::ApiClient;
+use lru::LruCache;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
+use std::sync::OnceLock;
+use tokio::sync::Mutex;
 use url::Url;
 
 use crate::helpers::url_with_query;
-use std::sync::{Mutex, OnceLock};
 
-static SPACE_KEY_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+const SPACE_KEY_CACHE_CAPACITY: usize = 1024;
+
+// Bounded cache to avoid unbounded memory growth in long-running / heavily scripted usage.
+// Tokio mutex avoids blocking async runtime worker threads.
+static SPACE_KEY_CACHE: OnceLock<Mutex<LruCache<String, String>>> = OnceLock::new();
+
+fn space_key_cache() -> &'static Mutex<LruCache<String, String>> {
+    SPACE_KEY_CACHE.get_or_init(|| {
+        Mutex::new(LruCache::new(
+            NonZeroUsize::new(SPACE_KEY_CACHE_CAPACITY).expect("non-zero cache capacity"),
+        ))
+    })
+}
 
 pub async fn resolve_page_id(client: &ApiClient, page: &str) -> Result<String> {
     if !page.is_empty() && page.chars().all(|c| c.is_ascii_digit()) {
@@ -45,7 +60,12 @@ pub async fn resolve_space_id(client: &ApiClient, space: &str) -> Result<String>
     if !space.is_empty() && space.chars().all(|c| c.is_ascii_digit()) {
         return Ok(space.to_string());
     }
-    let url = client.v2_url(&format!("/spaces?keys={space}&limit=1"));
+
+    // Avoid manual string formatting here: `space` is user input and must be URL-encoded.
+    let url = url_with_query(
+        &client.v2_url("/spaces"),
+        &[("keys", space.to_string()), ("limit", "1".to_string())],
+    )?;
     let items = client.get_paginated_results(url, false).await?;
     let id = items
         .first()
@@ -56,12 +76,14 @@ pub async fn resolve_space_id(client: &ApiClient, space: &str) -> Result<String>
 }
 
 pub async fn resolve_space_key(client: &ApiClient, space_id: &str) -> Result<String> {
-    if let Some(cache) = SPACE_KEY_CACHE.get()
-        && let Ok(guard) = cache.lock()
-        && let Some(key) = guard.get(space_id)
+    // Fast path: serve from cache.
     {
-        return Ok(key.clone());
+        let mut guard = space_key_cache().lock().await;
+        if let Some(key) = guard.get(space_id).cloned() {
+            return Ok(key);
+        }
     }
+
     let url = client.v2_url(&format!("/spaces/{}", space_id));
     let (json, _) = client.get_json(url).await?;
     let key = json
@@ -69,12 +91,12 @@ pub async fn resolve_space_key(client: &ApiClient, space_id: &str) -> Result<Str
         .and_then(|v| v.as_str())
         .unwrap_or(space_id)
         .to_string();
-    if let Ok(mut guard) = SPACE_KEY_CACHE
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
+
     {
-        guard.insert(space_id.to_string(), key.clone());
+        let mut guard = space_key_cache().lock().await;
+        guard.put(space_id.to_string(), key.clone());
     }
+
     Ok(key)
 }
 
@@ -89,26 +111,26 @@ pub async fn resolve_space_keys(
         return Ok(HashMap::new());
     }
 
-    // Serve from cache when possible.
+    // Serve from cache when possible, without holding the lock across awaits.
     let mut out: HashMap<String, String> = HashMap::new();
-    if let Some(cache) = SPACE_KEY_CACHE.get()
-        && let Ok(guard) = cache.lock()
+    let mut missing: Vec<String> = Vec::new();
     {
-        unique.retain(|id| {
-            if let Some(key) = guard.get(id) {
-                out.insert(id.clone(), key.clone());
-                false
+        let mut guard = space_key_cache().lock().await;
+        for id in &unique {
+            if let Some(key) = guard.get(id).cloned() {
+                out.insert(id.clone(), key);
             } else {
-                true
+                missing.push(id.clone());
             }
-        });
+        }
     }
-    if unique.is_empty() {
+
+    if missing.is_empty() {
         return Ok(out);
     }
 
-    let mut map = HashMap::new();
-    for chunk in unique.chunks(250) {
+    let mut fetched = HashMap::new();
+    for chunk in missing.chunks(250) {
         let ids = chunk.join(",");
         let url = client.v2_url(&format!("/spaces?ids={ids}&limit={}", chunk.len()));
         let items = client.get_paginated_results(url, false).await?;
@@ -125,19 +147,20 @@ pub async fn resolve_space_keys(
                 } else {
                     key.to_string()
                 };
-                map.insert(id.to_string(), display);
+                fetched.insert(id.to_string(), display);
             }
         }
     }
-    if let Ok(mut guard) = SPACE_KEY_CACHE
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
+
+    // Update cache.
     {
-        for (id, key) in &map {
-            guard.insert(id.clone(), key.clone());
+        let mut guard = space_key_cache().lock().await;
+        for (id, key) in &fetched {
+            guard.put(id.clone(), key.clone());
         }
     }
-    out.extend(map);
+
+    out.extend(fetched);
     Ok(out)
 }
 

@@ -637,6 +637,11 @@ pub struct CommentListArgs {
         help = "Filter by location: footer, inline, resolved (comma-separated)"
     )]
     pub location: Option<String>,
+    #[arg(
+        long,
+        help = "Confluence expand fields (advanced). Defaults to a minimal set suitable for list output."
+    )]
+    pub expand: Option<String>,
     #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
     #[arg(short = 'a', long, help = "Fetch all pages of results")]

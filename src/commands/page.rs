@@ -500,8 +500,16 @@ async fn page_update(client: &ApiClient, ctx: &AppContext, args: PageUpdateArgs)
     }
 
     let page_id = resolve_page_id(client, &args.page).await?;
+
+    // Fetch everything in one request (version/title/status + body) to avoid redundant GETs.
+    let get_url = client.v2_url(&format!(
+        "/pages/{page_id}?body-format={}",
+        args.body_format
+    ));
+    let (current, _) = client.get_json(get_url).await?;
+
+    // PUT target.
     let url = client.v2_url(&format!("/pages/{page_id}"));
-    let (current, _) = client.get_json(url.clone()).await?;
     let current_version = current
         .get("version")
         .and_then(|v| v.get("number"))
@@ -538,12 +546,7 @@ async fn page_update(client: &ApiClient, ctx: &AppContext, args: PageUpdateArgs)
     }
 
     let body = if args.body.is_none() && args.body_file.is_none() {
-        let body_url = client.v2_url(&format!(
-            "/pages/{page_id}?body-format={}",
-            args.body_format
-        ));
-        let (current_body, _) = client.get_json(body_url).await?;
-        current_body
+        current
             .get("body")
             .and_then(|body| body.get(&args.body_format))
             .and_then(|body| body.get("value"))
