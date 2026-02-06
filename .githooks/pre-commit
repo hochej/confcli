@@ -6,8 +6,21 @@ set -euo pipefail
 echo "==> cargo fmt --check"
 cargo fmt --all -- --check
 
-echo "==> cargo clippy"
+echo "==> cargo clippy (all features)"
 cargo clippy --all-targets --all-features -- -D warnings
 
-echo "==> cargo test"
+echo "==> cargo clippy (no default features)"
+cargo clippy --all-targets --no-default-features -- -D warnings
+
+echo "==> cargo test (all features)"
 cargo test --all-features
+
+echo "==> cargo test (no default features)"
+cargo test --no-default-features
+
+echo "==> cargo audit"
+if command -v cargo-audit &>/dev/null; then
+    cargo audit --deny warnings
+else
+    echo "  ⚠ cargo-audit not installed, skipping (install with: cargo install cargo-audit)"
+fi

@@ -9,12 +9,19 @@ confcli is a Confluence CLI written in Rust. It wraps the Confluence Cloud REST 
 ## Build & test
 
 ```bash
-cargo fmt --all -- --check   # formatting
-cargo clippy --all-targets --all-features -- -D warnings   # lints
-cargo test --all-features    # unit + integration tests
+cargo fmt --all -- --check                                        # formatting
+cargo clippy --all-targets --all-features -- -D warnings          # lints (all features)
+cargo clippy --all-targets --no-default-features -- -D warnings   # lints (read-only build)
+cargo test --all-features                                         # tests (all features)
+cargo test --no-default-features                                  # tests (read-only build)
+cargo audit --deny warnings                                       # security audit
 ```
 
-A pre-commit hook runs all three checks automatically. CI mirrors the same steps. **All three must pass before committing.**
+The pre-commit hook (`.githooks/pre-commit`) runs all of the above automatically. CI (`.github/workflows/ci.yml`) runs the same steps. **All checks must pass before committing.**
+
+### Pre-commit ↔ CI sync rule
+
+The pre-commit hook and CI workflow **must always stay in sync**. If you add, remove, or change a check in one, apply the same change to the other. The hook is the local gate; CI is the remote gate — they must enforce identical invariants.
 
 ## Code layout
 
