@@ -254,6 +254,102 @@ fn unique_stamp_for_tmp_filename() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use confcli::auth::AuthMethod;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+    use tokio::sync::oneshot;
+
+    struct TestServer {
+        base_url: String,
+        shutdown: oneshot::Sender<()>,
+        hits: Arc<AtomicUsize>,
+    }
+
+    impl TestServer {
+        fn url(&self, path: &str) -> Url {
+            Url::parse(&format!("{}{}", self.base_url, path)).unwrap()
+        }
+    }
+
+    async fn start_server<F>(handler: F) -> TestServer
+    where
+        F: Fn(usize, &str) -> (u16, Vec<(String, String)>, Vec<u8>) + Send + Sync + 'static,
+    {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base_url = format!("http://{}", addr);
+
+        let hits = Arc::new(AtomicUsize::new(0));
+        let hits_task = hits.clone();
+
+        let (tx, mut rx) = oneshot::channel::<()>();
+        let handler = Arc::new(handler);
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = &mut rx => return,
+                    res = listener.accept() => {
+                        let (mut sock, _) = match res {
+                            Ok(v) => v,
+                            Err(_) => continue,
+                        };
+
+                        let mut buf = vec![0u8; 8192];
+                        let n = match sock.read(&mut buf).await {
+                            Ok(n) => n,
+                            Err(_) => continue,
+                        };
+                        let req = String::from_utf8_lossy(&buf[..n]);
+                        let first = req.lines().next().unwrap_or_default();
+                        let target = first.split_whitespace().nth(1).unwrap_or("/");
+
+                        let hit = hits_task.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+                        let (status, headers, body) = handler(hit, target);
+
+                        let reason = match status {
+                            200 => "OK",
+                            404 => "Not Found",
+                            500 => "Internal Server Error",
+                            _ => "OK",
+                        };
+
+                        let mut resp = Vec::new();
+                        resp.extend_from_slice(format!("HTTP/1.1 {} {}\r\n", status, reason).as_bytes());
+                        resp.extend_from_slice(b"Connection: close\r\n");
+                        for (k, v) in headers {
+                            resp.extend_from_slice(format!("{}: {}\r\n", k, v).as_bytes());
+                        }
+                        resp.extend_from_slice(format!("Content-Length: {}\r\n\r\n", body.len()).as_bytes());
+                        resp.extend_from_slice(&body);
+                        let _ = sock.write_all(&resp).await;
+                        let _ = sock.shutdown().await;
+                    }
+                }
+            }
+        });
+
+        TestServer {
+            base_url,
+            shutdown: tx,
+            hits,
+        }
+    }
+
+    fn test_client(base_url: &str) -> ApiClient {
+        ApiClient::new(
+            base_url.to_string(),
+            base_url.to_string(),
+            base_url.to_string(),
+            AuthMethod::Bearer {
+                token: "test".to_string(),
+            },
+            0,
+        )
+        .unwrap()
+    }
 
     #[test]
     fn download_url_prepends_wiki_prefix() {
@@ -295,5 +391,92 @@ mod tests {
             result.as_str(),
             "https://example.atlassian.net/wiki/download/attachments/123/file.png?version=1"
         );
+    }
+
+    #[tokio::test]
+    async fn download_retries_on_500_then_succeeds() {
+        let srv = start_server(|hit, target| {
+            assert_eq!(target, "/file");
+            if hit == 1 {
+                (
+                    500,
+                    vec![("retry-after".to_string(), "0".to_string())],
+                    b"nope".to_vec(),
+                )
+            } else {
+                (
+                    200,
+                    vec![(
+                        "content-type".to_string(),
+                        "application/octet-stream".to_string(),
+                    )],
+                    b"hello".to_vec(),
+                )
+            }
+        })
+        .await;
+
+        let client = test_client(&srv.base_url);
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("out.bin");
+        let url = srv.url("/file");
+
+        download_to_file_with_retry(
+            &client,
+            url,
+            &dest,
+            "test",
+            DownloadToFileOptions {
+                retry: DownloadRetry { max_attempts: 3 },
+                progress: None,
+                verbose: 0,
+                quiet: true,
+            },
+        )
+        .await
+        .unwrap();
+        let bytes = std::fs::read(dir.path().join("out.bin")).unwrap();
+        assert_eq!(bytes, b"hello");
+        assert_eq!(srv.hits.load(AtomicOrdering::SeqCst), 2);
+
+        let _ = srv.shutdown.send(());
+    }
+
+    #[tokio::test]
+    async fn download_does_not_retry_on_404() {
+        let srv = start_server(|_hit, target| {
+            assert_eq!(target, "/missing");
+            (
+                404,
+                vec![("content-type".to_string(), "text/plain".to_string())],
+                b"nope".to_vec(),
+            )
+        })
+        .await;
+
+        let client = test_client(&srv.base_url);
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("out.bin");
+        let url = srv.url("/missing");
+
+        let res = download_to_file_with_retry(
+            &client,
+            url,
+            &dest,
+            "test",
+            DownloadToFileOptions {
+                retry: DownloadRetry { max_attempts: 3 },
+                progress: None,
+                verbose: 0,
+                quiet: true,
+            },
+        )
+        .await;
+
+        assert!(res.is_err());
+        assert!(!dest.exists());
+        assert_eq!(srv.hits.load(AtomicOrdering::SeqCst), 1);
+
+        let _ = srv.shutdown.send(());
     }
 }

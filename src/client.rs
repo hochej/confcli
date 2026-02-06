@@ -198,8 +198,16 @@ impl ApiClient {
     }
 
     pub async fn get_paginated_results(&self, url: String, all: bool) -> Result<Vec<Value>> {
-        const MAX_PAGES: usize = 10_000;
+        self.get_paginated_results_with_limit(url, all, 10_000)
+            .await
+    }
 
+    async fn get_paginated_results_with_limit(
+        &self,
+        url: String,
+        all: bool,
+        max_pages: usize,
+    ) -> Result<Vec<Value>> {
         let mut results = Vec::new();
         let mut next_url: Option<String> = Some(url);
         let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -207,8 +215,8 @@ impl ApiClient {
 
         while let Some(url) = next_url {
             pages += 1;
-            if pages > MAX_PAGES {
-                bail!("Pagination aborted after {MAX_PAGES} pages (possible looping 'next' link)");
+            if pages > max_pages {
+                bail!("Pagination aborted after {max_pages} pages (possible looping 'next' link)");
             }
             if !visited.insert(url.clone()) {
                 bail!("Pagination loop detected: already visited next URL: {url}");
@@ -481,4 +489,241 @@ fn request_id(headers: &HeaderMap) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::AuthMethod;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+    use tokio::sync::oneshot;
+
+    struct TestServer {
+        base_url: String,
+        shutdown: oneshot::Sender<()>,
+        hits: Arc<AtomicUsize>,
+    }
+
+    impl TestServer {
+        fn url(&self, path: &str) -> String {
+            format!("{}{}", self.base_url, path)
+        }
+    }
+
+    async fn start_server<F>(handler: F) -> TestServer
+    where
+        F: Fn(String, usize, &str) -> (u16, Vec<(String, String)>, Vec<u8>) + Send + Sync + 'static,
+    {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let base_url = format!("http://{}", addr);
+        let base_url_task = base_url.clone();
+
+        let (tx, mut rx) = oneshot::channel::<()>();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let hits_task = hits.clone();
+        let handler = Arc::new(handler);
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = &mut rx => {
+                        return;
+                    }
+                    res = listener.accept() => {
+                        let (mut sock, _) = match res {
+                            Ok(v) => v,
+                            Err(_) => continue,
+                        };
+
+                        let mut buf = vec![0u8; 8192];
+                        let n = match sock.read(&mut buf).await {
+                            Ok(n) => n,
+                            Err(_) => continue,
+                        };
+                        let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                        let first = req.lines().next().unwrap_or_default();
+                        let raw_target = first.split_whitespace().nth(1).unwrap_or("/");
+                        let target = if raw_target.starts_with("http://") || raw_target.starts_with("https://") {
+                            Url::parse(raw_target).ok().map(|u| {
+                                let mut s = u.path().to_string();
+                                if let Some(q) = u.query() {
+                                    s.push('?');
+                                    s.push_str(q);
+                                }
+                                s
+                            }).unwrap_or_else(|| "/".to_string())
+                        } else {
+                            raw_target.to_string()
+                        };
+
+                        let hit = hits_task.fetch_add(1, Ordering::SeqCst) + 1;
+                        let (status, headers, body) = handler(base_url_task.clone(), hit, &target);
+
+                        let reason = match status {
+                            200 => "OK",
+                            400 => "Bad Request",
+                            404 => "Not Found",
+                            429 => "Too Many Requests",
+                            500 => "Internal Server Error",
+                            _ => "OK",
+                        };
+
+                        let mut resp = Vec::new();
+                        resp.extend_from_slice(format!("HTTP/1.1 {} {}\r\n", status, reason).as_bytes());
+                        resp.extend_from_slice(b"Connection: close\r\n");
+                        for (k, v) in headers {
+                            resp.extend_from_slice(format!("{}: {}\r\n", k, v).as_bytes());
+                        }
+                        resp.extend_from_slice(format!("Content-Length: {}\r\n\r\n", body.len()).as_bytes());
+                        resp.extend_from_slice(&body);
+                        let _ = sock.write_all(&resp).await;
+                        let _ = sock.shutdown().await;
+                    }
+                }
+            }
+        });
+
+        TestServer {
+            base_url,
+            shutdown: tx,
+            hits,
+        }
+    }
+
+    fn test_client(base_url: &str) -> ApiClient {
+        ApiClient::new(
+            base_url.to_string(),
+            base_url.to_string(),
+            base_url.to_string(),
+            AuthMethod::Bearer {
+                token: "test".to_string(),
+            },
+            0,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn retry_wait_uses_retry_after_when_present() {
+        let mut headers = HeaderMap::new();
+        headers.insert("retry-after", "5".parse().unwrap());
+        let d = ApiClient::retry_wait_from_headers(&headers, 1);
+        assert!(d >= Duration::from_secs(5));
+        assert!(d < Duration::from_millis(5250));
+    }
+
+    #[test]
+    fn retry_wait_falls_back_to_exponential_backoff() {
+        let headers = HeaderMap::new();
+        let d1 = ApiClient::retry_wait_from_headers(&headers, 1);
+        let d2 = ApiClient::retry_wait_from_headers(&headers, 2);
+        assert!(d1 >= Duration::from_secs(1) && d1 < Duration::from_millis(1250));
+        assert!(d2 >= Duration::from_secs(2) && d2 < Duration::from_millis(2250));
+    }
+
+    #[tokio::test]
+    async fn pagination_loop_is_detected_before_second_request() {
+        let srv = start_server(|_base, _hit, path| {
+            assert_eq!(path, "/loop");
+            let body = br#"{"results":[{"id":1}]}"#.to_vec();
+            let headers = vec![("link".to_string(), "</loop>; rel=next".to_string())];
+            (200, headers, body)
+        })
+        .await;
+
+        let client = test_client(&srv.base_url);
+        let url = srv.url("/loop");
+
+        let res = client.get_paginated_results_with_limit(url, true, 10).await;
+        assert!(res.is_err());
+        let msg = format!("{:#}", res.unwrap_err());
+        assert!(msg.contains("Pagination loop detected"));
+        assert_eq!(srv.hits.load(Ordering::SeqCst), 1);
+
+        let _ = srv.shutdown.send(());
+    }
+
+    #[tokio::test]
+    async fn pagination_aborts_at_max_pages_without_fetching_next_page() {
+        let srv = start_server(|base, _hit, path| {
+            // /pages/<n>
+            let n: usize = path.trim_start_matches("/pages/").parse().unwrap_or(0);
+            let next = format!("</pages/{}>; rel=next", n + 1);
+            let body = format!("{{\"results\":[{{\"n\":{n}}}]}}")
+                .as_bytes()
+                .to_vec();
+            let headers = vec![("link".to_string(), next)];
+
+            // sanity: base is present, ensure it looks like what the client will join against
+            assert!(base.starts_with("http://"));
+            (200, headers, body)
+        })
+        .await;
+
+        let client = test_client(&srv.base_url);
+        let url = srv.url("/pages/1");
+
+        let res = client.get_paginated_results_with_limit(url, true, 3).await;
+        assert!(res.is_err());
+        let msg = format!("{:#}", res.unwrap_err());
+        assert!(msg.contains("Pagination aborted after 3 pages"));
+        assert_eq!(srv.hits.load(Ordering::SeqCst), 3);
+
+        let _ = srv.shutdown.send(());
+    }
+
+    #[tokio::test]
+    async fn request_retries_on_500_then_succeeds() {
+        let srv = start_server(|_base, hit, path| {
+            assert_eq!(path, "/flaky");
+            if hit < 3 {
+                (
+                    500,
+                    vec![("retry-after".to_string(), "0".to_string())],
+                    b"nope".to_vec(),
+                )
+            } else {
+                (
+                    200,
+                    vec![("content-type".to_string(), "application/json".to_string())],
+                    br#"{"ok":true}"#.to_vec(),
+                )
+            }
+        })
+        .await;
+
+        let client = test_client(&srv.base_url);
+        let url = srv.url("/flaky");
+
+        let (json, _headers) = client.get_json(url).await.unwrap();
+        assert_eq!(json.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(srv.hits.load(Ordering::SeqCst), 3);
+
+        let _ = srv.shutdown.send(());
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_on_400() {
+        let srv = start_server(|_base, _hit, path| {
+            assert_eq!(path, "/bad");
+            (
+                400,
+                vec![("content-type".to_string(), "text/plain".to_string())],
+                b"bad".to_vec(),
+            )
+        })
+        .await;
+
+        let client = test_client(&srv.base_url);
+        let url = srv.url("/bad");
+        let res = client.get_json(url).await;
+        assert!(res.is_err());
+        assert_eq!(srv.hits.load(Ordering::SeqCst), 1);
+
+        let _ = srv.shutdown.send(());
+    }
 }

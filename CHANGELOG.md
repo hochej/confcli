@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-02-06
+
+### Added
+
+- **Retry & pagination tests**: unit tests for HTTP retry logic (500 retries, no retry on 400), pagination loop detection, and max-page abort in `client.rs`.
+- **Download retry tests**: unit tests for download retry on 500 and no-retry on 404 in `download.rs`.
+- **`tokio` test-util**: added `test-util` feature to dev-dependencies for time control in tests.
+
+### Changed
+
+- **Installer hardening**: `install.sh` now supports `GITHUB_TOKEN`, `GITHUB_BASE_URL`, and `GITHUB_API_URL` env vars. Falls back to GitHub API when redirect-based version detection fails. Provides actionable error messages for rate limiting (403/429).
+
+### Removed
+
+- **`TESTING.md`**: removed one-off manual testing notes (findings already addressed).
+- **`TODO.md`**: removed — remaining items completed or tracked elsewhere.
+
 ## [0.2.4] - 2026-02-06
 
 ### Fixed
