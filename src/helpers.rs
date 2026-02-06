@@ -19,6 +19,7 @@ pub fn maybe_print_json<T: serde::Serialize>(ctx: &AppContext, value: &T) -> Res
     print_json(value)
 }
 
+#[cfg(feature = "write")]
 pub fn maybe_print_kv(ctx: &AppContext, rows: Vec<Vec<String>>) {
     if ctx.quiet {
         return;

@@ -1,6 +1,8 @@
 use crate::auth::AuthMethod;
 use crate::pagination::{next_link_from_body, next_link_from_headers};
-use anyhow::{Context, Result, anyhow, bail};
+#[cfg(feature = "write")]
+use anyhow::Context;
+use anyhow::{Result, anyhow, bail};
 use base64::Engine;
 use reqwest::header::HeaderMap;
 #[cfg(feature = "write")]

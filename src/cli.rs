@@ -2,6 +2,33 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use confcli::output::OutputFormat;
 use std::path::PathBuf;
 
+#[cfg(feature = "write")]
+const CLI_AFTER_HELP: &str = "EXAMPLES:\n  confcli auth login --domain yourcompany.atlassian.net --email you@example.com --token <token>\n  confcli space list --all\n  confcli space pages MFS --tree\n  confcli page get MFS:Overview\n  confcli search \"confluence\"\n  echo '<p>Hello</p>' | confcli page create --space MFS --title Hello --body-file -\n";
+
+#[cfg(not(feature = "write"))]
+const CLI_AFTER_HELP: &str = "EXAMPLES:\n  confcli auth login --domain yourcompany.atlassian.net --email you@example.com --token <token>\n  confcli space list --all\n  confcli space pages MFS --tree\n  confcli page get MFS:Overview\n  confcli search \"confluence\"\n";
+
+#[cfg(feature = "write")]
+const PAGE_ABOUT: &str = "List, view, create, and manage pages";
+#[cfg(not(feature = "write"))]
+const PAGE_ABOUT: &str = "List and view pages";
+
+#[cfg(feature = "write")]
+const ATTACHMENT_ABOUT: &str = "List, download, upload, and manage attachments";
+#[cfg(not(feature = "write"))]
+const ATTACHMENT_ABOUT: &str = "List, download, and inspect attachments";
+
+#[cfg(feature = "write")]
+const LABEL_ABOUT: &str = "List, add, and remove page labels";
+#[cfg(not(feature = "write"))]
+const LABEL_ABOUT: &str = "List page labels";
+
+#[cfg(feature = "write")]
+const COMMENT_ABOUT: &str = "List, add, and delete comments";
+#[cfg(not(feature = "write"))]
+const COMMENT_ABOUT: &str = "List comments";
+
+#[cfg(feature = "write")]
 fn parse_space_key(s: &str) -> Result<String, String> {
     let s = s.trim();
     if s.is_empty() {
@@ -26,7 +53,7 @@ fn parse_space_key(s: &str) -> Result<String, String> {
     name = "confcli",
     version,
     about = "A scrappy little Confluence CLI for you and your clanker",
-    after_help = "EXAMPLES:\n  confcli auth login --domain yourcompany.atlassian.net --email you@example.com --token <token>\n  confcli space list --all\n  confcli space pages MFS --tree\n  confcli page get MFS:Overview\n  confcli search \"confluence\"\n  echo '<p>Hello</p>' | confcli page create --space MFS --title Hello --body-file -\n"
+    after_help = CLI_AFTER_HELP
 )]
 pub struct Cli {
     #[arg(short = 'q', long, global = true, help = "Suppress all output")]
@@ -45,15 +72,15 @@ pub enum Commands {
     Auth(AuthCommand),
     #[command(subcommand, about = "List and inspect spaces")]
     Space(SpaceCommand),
-    #[command(subcommand, about = "List, view, create, and manage pages")]
+    #[command(subcommand, about = PAGE_ABOUT)]
     Page(PageCommand),
     #[command(about = "Search content (CQL or plain text)")]
     Search(SearchCommand),
-    #[command(subcommand, about = "List, download, upload, and manage attachments")]
+    #[command(subcommand, about = ATTACHMENT_ABOUT)]
     Attachment(AttachmentCommand),
-    #[command(subcommand, about = "List, add, and remove page labels")]
+    #[command(subcommand, about = LABEL_ABOUT)]
     Label(LabelCommand),
-    #[command(subcommand, about = "List, add, and delete comments")]
+    #[command(subcommand, about = COMMENT_ABOUT)]
     Comment(CommentCommand),
     #[command(about = "Export a page and its attachments to a folder")]
     Export(ExportArgs),

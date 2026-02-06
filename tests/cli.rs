@@ -15,6 +15,16 @@ fn help_flag() {
 }
 
 #[test]
+#[cfg(not(feature = "write"))]
+fn help_examples_do_not_include_write_commands_in_read_only_build() {
+    confcli()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("page create").not());
+}
+
+#[test]
 fn version_flag() {
     confcli()
         .args(["--version"])
@@ -47,9 +57,10 @@ fn page_help() {
         .args(["page", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "List, view, create, and manage pages",
-        ));
+        .stdout(
+            predicate::str::contains("List, view, create, and manage pages")
+                .or(predicate::str::contains("List and view pages")),
+        );
 }
 
 #[test]
@@ -67,9 +78,11 @@ fn attachment_help() {
         .args(["attachment", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "List, download, upload, and manage attachments",
-        ));
+        .stdout(
+            predicate::str::contains("List, download, upload, and manage attachments").or(
+                predicate::str::contains("List, download, and inspect attachments"),
+            ),
+        );
 }
 
 #[test]
@@ -78,9 +91,10 @@ fn label_help() {
         .args(["label", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "List, add, and remove page labels",
-        ));
+        .stdout(
+            predicate::str::contains("List, add, and remove page labels")
+                .or(predicate::str::contains("List page labels")),
+        );
 }
 
 #[test]

@@ -1,6 +1,9 @@
-use anyhow::{Context, Result};
+#[cfg(feature = "write")]
+use anyhow::Context;
+use anyhow::Result;
 use confcli::client::ApiClient;
 use confcli::json_util::json_str;
+#[cfg(feature = "write")]
 use confcli::markdown::markdown_to_storage;
 use confcli::output::OutputFormat;
 #[cfg(feature = "write")]
