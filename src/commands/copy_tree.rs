@@ -254,8 +254,20 @@ async fn copy_tree(client: &ApiClient, ctx: &AppContext, args: CopyTreeArgs) -> 
             };
 
             if ctx.dry_run {
-                print_line(ctx, &format!("Would create '{title}' under {new_parent}"));
-                mapping.insert(node.id.clone(), format!("dry-run:{}", node.id));
+                let new_parent_display = if depth == 0 {
+                    new_parent.clone()
+                } else {
+                    // In dry-run mode we don't have real IDs for newly-created pages.
+                    // Show the source parent id to make the plan easier to read.
+                    let parent_old = node.parent_id.as_ref().context("Missing parentId")?;
+                    format!("(copy of {parent_old})")
+                };
+
+                print_line(
+                    ctx,
+                    &format!("Would create '{title}' under {new_parent_display}"),
+                );
+                mapping.insert(node.id.clone(), format!("<dry-run:{}>", node.id));
             } else {
                 let body = node.body_storage.as_ref().cloned().unwrap_or_default();
                 let payload = json!({

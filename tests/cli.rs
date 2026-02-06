@@ -140,6 +140,20 @@ fn page_create_missing_space() {
 }
 
 #[test]
+#[cfg(feature = "write")]
+fn page_update_requires_at_least_one_change() {
+    // This should fail before making any network requests.
+    confcli()
+        .args(["page", "update", "12345"])
+        .env("CONFLUENCE_DOMAIN", "example.atlassian.net")
+        .env("CONFLUENCE_EMAIL", "test@example.com")
+        .env("CONFLUENCE_TOKEN", "not-a-real-token")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Nothing to update"));
+}
+
+#[test]
 fn dry_run_flag_accepted() {
     // --dry-run should be accepted as a global flag (not rejected by arg parsing).
     // We test with --help to avoid needing credentials.

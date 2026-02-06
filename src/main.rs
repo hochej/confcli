@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
 use std::io;
+use std::io::Write;
 
 mod cli;
 mod commands;
@@ -40,12 +41,21 @@ async fn main() -> Result<()> {
         if ctx.verbose > 0 {
             eprintln!("{err:?}");
         } else {
-            eprintln!("{err}");
+            eprintln!("{}", format_error_chain(&err));
         }
         std::process::exit(1);
     }
 
     Ok(())
+}
+
+fn format_error_chain(err: &anyhow::Error) -> String {
+    let mut out = err.to_string();
+    for cause in err.chain().skip(1) {
+        out.push_str(": ");
+        out.push_str(&cause.to_string());
+    }
+    out
 }
 
 fn generate_completions(args: cli::CompletionsArgs) -> Result<()> {
@@ -56,6 +66,20 @@ fn generate_completions(args: cli::CompletionsArgs) -> Result<()> {
         Shell::Fish => clap_complete::Shell::Fish,
         Shell::Pwsh => clap_complete::Shell::PowerShell,
     };
-    clap_complete::generate(shell, &mut cmd, "confcli", &mut io::stdout());
+
+    // `clap_complete::generate(..., &mut stdout())` can panic on broken pipes
+    // (e.g. `confcli completions bash | head`). Generate into a buffer first,
+    // then write it to stdout and gracefully ignore BrokenPipe.
+    let mut buf: Vec<u8> = Vec::new();
+    clap_complete::generate(shell, &mut cmd, "confcli", &mut buf);
+
+    let mut stdout = io::stdout().lock();
+    if let Err(err) = stdout.write_all(&buf) {
+        if err.kind() == io::ErrorKind::BrokenPipe {
+            return Ok(());
+        }
+        return Err(err.into());
+    }
+
     Ok(())
 }

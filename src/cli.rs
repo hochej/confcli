@@ -218,7 +218,7 @@ pub struct SpaceCreateArgs {
         help = "When outputting JSON, print a small human-friendly object instead of the full API response"
     )]
     pub compact_json: bool,
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
 }
 
@@ -229,7 +229,7 @@ pub struct SpaceDeleteArgs {
     pub space: String,
     #[arg(short = 'y', long, help = "Skip confirmation prompt")]
     pub yes: bool,
-    #[arg(short = 'o', long, help = "Output format: json or table")]
+    #[arg(short = 'o', long, help = "Output format: json, table, or markdown")]
     pub output: Option<OutputFormat>,
 }
 
@@ -316,7 +316,7 @@ pub struct PageBodyArgs {
         help = "Body format: markdown, view, storage, atlas_doc_format, adf"
     )]
     pub format: String,
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table (json wraps body in a JSON object)")]
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown (json wraps body in a JSON object)")]
     pub output: OutputFormat,
 }
 
@@ -358,7 +358,7 @@ pub struct PageCreateArgs {
         help = "Body format: storage, atlas_doc_format, wiki"
     )]
     pub body_format: String,
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
 }
 
@@ -385,7 +385,7 @@ pub struct PageUpdateArgs {
     pub body_format: String,
     #[arg(long, help = "Version message")]
     pub message: Option<String>,
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
 }
 
@@ -400,7 +400,7 @@ pub struct PageDeleteArgs {
     pub force: bool,
     #[arg(short = 'y', long, help = "Skip confirmation prompt")]
     pub yes: bool,
-    #[arg(short = 'o', long, help = "Output format: json or table")]
+    #[arg(short = 'o', long, help = "Output format: json, table, or markdown")]
     pub output: Option<OutputFormat>,
 }
 
@@ -410,7 +410,7 @@ pub struct PageChildrenArgs {
     pub page: String,
     #[arg(long, help = "List all descendants instead of direct children")]
     pub recursive: bool,
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
     #[arg(short = 'a', long, help = "Fetch all pages of results")]
     pub all: bool,
@@ -427,7 +427,7 @@ pub struct PageChildrenArgs {
 pub struct PageHistoryArgs {
     #[arg(help = "Page id, URL, or SPACE:Title")]
     pub page: String,
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
     #[arg(
         short = 'n',
@@ -456,7 +456,7 @@ pub struct SearchCommand {
     pub query: String,
     #[arg(long, help = "Filter by space key")]
     pub space: Option<String>,
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
     #[arg(short = 'a', long, help = "Fetch all pages of results")]
     pub all: bool,
@@ -508,7 +508,7 @@ pub struct AttachmentListArgs {
 pub struct AttachmentGetArgs {
     #[arg(help = "Attachment id")]
     pub attachment: String,
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
 }
 
@@ -529,7 +529,7 @@ pub struct AttachmentUploadArgs {
     pub files: Vec<PathBuf>,
     #[arg(long, help = "Optional attachment comment")]
     pub comment: Option<String>,
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
 }
 
@@ -542,7 +542,7 @@ pub struct AttachmentDeleteArgs {
     pub purge: bool,
     #[arg(short = 'y', long, help = "Skip confirmation prompt")]
     pub yes: bool,
-    #[arg(short = 'o', long, help = "Output format: json or table")]
+    #[arg(short = 'o', long, help = "Output format: json, table, or markdown")]
     pub output: Option<OutputFormat>,
 }
 
@@ -601,7 +601,7 @@ pub struct LabelRemoveArgs {
 pub struct LabelPagesArgs {
     #[arg(help = "Label name")]
     pub label: String,
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
     #[arg(short = 'a', long, help = "Fetch all pages of results")]
     pub all: bool,
@@ -637,7 +637,7 @@ pub struct CommentListArgs {
         help = "Filter by location: footer, inline, resolved (comma-separated)"
     )]
     pub location: Option<String>,
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
     #[arg(short = 'a', long, help = "Fetch all pages of results")]
     pub all: bool,
@@ -676,7 +676,7 @@ pub struct CommentAddArgs {
         help = "Body format: storage, html, markdown"
     )]
     pub body_format: String,
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
 }
 
@@ -687,7 +687,7 @@ pub struct CommentDeleteArgs {
     pub comment: String,
     #[arg(short = 'y', long, help = "Skip confirmation prompt")]
     pub yes: bool,
-    #[arg(short = 'o', long, help = "Output format: json or table")]
+    #[arg(short = 'o', long, help = "Output format: json, table, or markdown")]
     pub output: Option<OutputFormat>,
 }
 
@@ -711,7 +711,7 @@ pub struct ExportArgs {
         help = "Max concurrent attachment downloads"
     )]
     pub concurrency: usize,
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
 }
 
@@ -747,6 +747,6 @@ pub struct CopyTreeArgs {
         help = "Max concurrent fetches for source bodies"
     )]
     pub concurrency: usize,
-    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
+    #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
 }

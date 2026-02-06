@@ -2,8 +2,17 @@
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-02-06
+
 ### Fixed
 
+- **Shell completions**: `confcli completions <shell> | head` no longer panics on broken pipe.
+- **`page update`** now errors if no changes are specified (prevents confusing no-op “success”).
+- **Friendlier HTTP errors**: large raw response bodies are no longer printed by default; use `-v` to include the response body.
+- **Auth hinting**: `401/403` (and some generic `404 Not Found`) now include a hint to run `confcli auth status`.
+- **`copy-tree --dry-run`** output is clearer (no more `dry-run:<id>` pseudo-parent IDs in messages).
+- **Error reporting**: non-verbose mode now prints the full anyhow error chain (preserves context like “Failed to fetch page …: 404 …”).
+- **Help text**: `--output` help now consistently mentions markdown where supported.
 - **Installer**: `curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | sh` now works (fixed stdout pollution breaking version detection) and README examples for `VERSION`/`INSTALL_DIR` piping are correct.
 - **Deep page trees**: `page children --recursive` and `copy-tree` now correctly traverse/copy deep hierarchies by walking `direct-children` instead of relying on the limited `/descendants` endpoint.
 - **`page get -o table` output** no longer dumps the full page body by default; use `--show-body` to include it.

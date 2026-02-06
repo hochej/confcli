@@ -67,14 +67,19 @@ pub fn attachment_download_url(base: &Url, download: &str) -> Result<Url> {
         .with_context(|| format!("Invalid attachment download link '{download}'"))
 }
 
+pub struct DownloadToFileOptions<'a> {
+    pub retry: DownloadRetry,
+    pub progress: Option<&'a ProgressBar>,
+    pub verbose: u8,
+    pub quiet: bool,
+}
+
 pub async fn download_to_file_with_retry(
     client: &ApiClient,
     url: Url,
     dest: &Path,
     label: &str,
-    retry: DownloadRetry,
-    progress: Option<&ProgressBar>,
-    quiet: bool,
+    opts: DownloadToFileOptions<'_>,
 ) -> Result<()> {
     let mut attempt = 0u32;
     loop {
@@ -92,7 +97,7 @@ pub async fn download_to_file_with_retry(
             Ok(r) => r,
             Err(err) => {
                 let _ = tokio::fs::remove_file(&tmp).await;
-                if attempt >= retry.max_attempts {
+                if attempt >= opts.retry.max_attempts {
                     return Err(anyhow::Error::new(err)).with_context(|| {
                         format!(
                             "Download failed after {attempt} attempt(s): {label} -> {}",
@@ -101,10 +106,10 @@ pub async fn download_to_file_with_retry(
                     });
                 }
                 let wait = ApiClient::retry_wait_from_headers(&HeaderMap::new(), attempt);
-                if !quiet {
+                if !opts.quiet {
                     eprintln!(
                         "Retrying download ({attempt}/{}) in {:?}: {label} (request error: {err})",
-                        retry.max_attempts, wait
+                        opts.retry.max_attempts, wait
                     );
                 }
                 tokio::time::sleep(wait).await;
@@ -116,16 +121,20 @@ pub async fn download_to_file_with_retry(
         if !status.is_success() {
             let headers = response.headers().clone();
             let body = response.text().await.unwrap_or_default();
-            let err = anyhow::anyhow!("Request failed: {status} {body}")
-                .context(format!("Download request failed for {url}"));
+            let msg = confcli::client::friendly_error(status, &body);
+            let mut err =
+                anyhow::anyhow!(msg).context(format!("Download request failed for {url}"));
+            if opts.verbose > 0 {
+                err = err.context(format!("Response body: {body}"));
+            }
 
             let _ = tokio::fs::remove_file(&tmp).await;
-            if attempt < retry.max_attempts && (status == 429 || status.is_server_error()) {
+            if attempt < opts.retry.max_attempts && (status == 429 || status.is_server_error()) {
                 let wait = ApiClient::retry_wait_from_headers(&headers, attempt);
-                if !quiet {
+                if !opts.quiet {
                     eprintln!(
                         "Retrying download ({attempt}/{}) in {:?}: {label} (status {status})",
-                        retry.max_attempts, wait
+                        opts.retry.max_attempts, wait
                     );
                 }
                 tokio::time::sleep(wait).await;
@@ -141,7 +150,7 @@ pub async fn download_to_file_with_retry(
         }
 
         let total = response.content_length();
-        if let (Some(bar), Some(total)) = (progress, total)
+        if let (Some(bar), Some(total)) = (opts.progress, total)
             && bar.length().is_none()
         {
             bar.set_length(total);
@@ -154,7 +163,7 @@ pub async fn download_to_file_with_retry(
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.context("Download stream error")?;
             tokio::io::AsyncWriteExt::write_all(&mut file, &chunk).await?;
-            if let Some(bar) = progress {
+            if let Some(bar) = opts.progress {
                 bar.inc(chunk.len() as u64);
             }
         }

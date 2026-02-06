@@ -487,6 +487,18 @@ async fn page_create(client: &ApiClient, ctx: &AppContext, args: PageCreateArgs)
 
 #[cfg(feature = "write")]
 async fn page_update(client: &ApiClient, ctx: &AppContext, args: PageUpdateArgs) -> Result<()> {
+    let nothing_to_update = args.title.is_none()
+        && args.parent.is_none()
+        && args.status.is_none()
+        && args.body.is_none()
+        && args.body_file.is_none()
+        && args.message.is_none();
+    if nothing_to_update {
+        return Err(anyhow::anyhow!(
+            "Nothing to update. Provide at least one of --title, --parent, --status, --body/--body-file, or --message (or use `confcli page edit`)."
+        ));
+    }
+
     let page_id = resolve_page_id(client, &args.page).await?;
     let url = client.v2_url(&format!("/pages/{page_id}"));
     let (current, _) = client.get_json(url.clone()).await?;

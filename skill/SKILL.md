@@ -77,7 +77,7 @@ confcli page update MFS:Overview --body-file content.html
 confcli page delete 12345
 
 # Attachments
-confcli attachment list --page MFS:Overview
+confcli attachment list MFS:Overview
 confcli attachment upload MFS:Overview ./file.png ./other.pdf
 confcli attachment download att12345 --dest file.png
 

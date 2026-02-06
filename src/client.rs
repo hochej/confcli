@@ -1,8 +1,6 @@
 use crate::auth::AuthMethod;
 use crate::pagination::{next_link_from_body, next_link_from_headers};
-#[cfg(feature = "write")]
-use anyhow::Context;
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use http::HeaderMap;
 #[cfg(feature = "write")]
@@ -147,7 +145,11 @@ impl ApiClient {
                     }
 
                     let body = response.text().await.unwrap_or_default();
-                    bail!("{}", friendly_error(status, &body));
+                    let msg = friendly_error(status, &body);
+                    if self.verbose > 0 {
+                        return Err(anyhow!(format!("{msg}\n\nResponse body:\n{body}")));
+                    }
+                    bail!("{msg}");
                 }
                 Err(e) => {
                     if attempts < MAX_ATTEMPTS {
@@ -212,7 +214,11 @@ impl ApiClient {
                     }
 
                     let body = response.text().await.unwrap_or_default();
-                    bail!("{}", friendly_error(status, &body));
+                    let msg = friendly_error(status, &body);
+                    if self.verbose > 0 {
+                        return Err(anyhow!(format!("{msg}\n\nResponse body:\n{body}")));
+                    }
+                    bail!("{msg}");
                 }
                 Err(e) => {
                     if attempts < MAX_ATTEMPTS {
@@ -324,7 +330,13 @@ impl ApiClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            bail!("Upload failed: {status} {body}");
+            let msg = friendly_error(status, &body);
+            if self.verbose > 0 {
+                return Err(anyhow!(format!(
+                    "Upload failed: {msg}\n\nResponse body:\n{body}"
+                )));
+            }
+            bail!("Upload failed: {msg}");
         }
         Ok(response.json::<Value>().await?)
     }
@@ -353,33 +365,73 @@ fn jitter(max: Duration) -> Duration {
 }
 
 /// Produce a human-friendly error message from an HTTP status + body.
-fn friendly_error(status: reqwest::StatusCode, body: &str) -> String {
-    // Extract the title field from Confluence error JSON (best-effort).
-    let title = serde_json::from_str::<serde_json::Value>(body)
-        .ok()
-        .and_then(|v| {
-            v.get("errors")
-                .and_then(|e| e.as_array())
-                .and_then(|a| a.first())
-                .and_then(|e| e.get("title"))
-                .and_then(|t| t.as_str())
-                .map(|s| s.to_string())
-                .or_else(|| {
-                    v.get("message")
-                        .and_then(|m| m.as_str())
-                        .map(|s| s.to_string())
-                })
-        });
-
-    if status == 409 {
-        return "Conflict: the page was modified concurrently. Fetch the latest version and retry your update.".to_string();
+///
+/// This intentionally avoids printing large raw response bodies by default.
+/// For detailed diagnostics, callers can attach the response body as context
+/// when `-v/-vv` is enabled.
+pub fn friendly_error(status: reqwest::StatusCode, body: &str) -> String {
+    fn clean(s: &str, max_chars: usize) -> String {
+        let joined = s.split_whitespace().collect::<Vec<_>>().join(" ");
+        let mut out = String::new();
+        for (i, ch) in joined.chars().enumerate() {
+            if i >= max_chars {
+                out.push('…');
+                break;
+            }
+            out.push(ch);
+        }
+        out.trim().to_string()
     }
 
-    if let Some(title) = title {
-        format!("{status}: {title}")
+    // Extract a message/title field from Confluence error JSON (best-effort).
+    let parsed = serde_json::from_str::<serde_json::Value>(body).ok();
+    let extracted = parsed.as_ref().and_then(|v| {
+        v.get("errors")
+            .and_then(|e| e.as_array())
+            .and_then(|a| a.first())
+            .and_then(|e| e.get("title"))
+            .and_then(|t| t.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| {
+                v.get("message")
+                    .and_then(|m| m.as_str())
+                    .map(|s| s.to_string())
+            })
+    });
+
+    if status == reqwest::StatusCode::CONFLICT {
+        return "409 Conflict: the page was modified concurrently. Fetch the latest version and retry your update.".to_string();
+    }
+
+    let mut msg = if let Some(extracted_msg) = extracted.as_deref() {
+        format!("{status}: {}", clean(extracted_msg, 240))
     } else {
-        format!("Request failed: {status} {body}")
+        let reason = status
+            .canonical_reason()
+            .unwrap_or("Request failed")
+            .to_string();
+        let b = body.trim();
+        if b.is_empty() {
+            format!("{status}: {reason}")
+        } else {
+            // Non-JSON or unknown shape: include only a small snippet.
+            format!("{status}: {reason}: {}", clean(b, 160))
+        }
+    };
+
+    // Atlassian Cloud sometimes returns 404 for auth/permission failures.
+    let extracted_is_generic_not_found = extracted
+        .as_deref()
+        .is_some_and(|s| s.eq_ignore_ascii_case("not found"));
+
+    let needs_auth_hint = status == reqwest::StatusCode::UNAUTHORIZED
+        || status == reqwest::StatusCode::FORBIDDEN
+        || (status == reqwest::StatusCode::NOT_FOUND && extracted_is_generic_not_found);
+    if needs_auth_hint {
+        msg.push_str(" (this may be an auth/permission issue; run `confcli auth status`)");
     }
+
+    msg
 }
 
 fn request_id(headers: &HeaderMap) -> Option<String> {

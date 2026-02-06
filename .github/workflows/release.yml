@@ -63,13 +63,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
+      - name: Extract changelog section
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Extracting CHANGELOG for version $VERSION"
+          python3 scripts/extract_changelog.py "$VERSION" > RELEASE_NOTES.md
+          echo "--- RELEASE_NOTES.md ---"
+          cat RELEASE_NOTES.md
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*.tar.gz
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
+          generate_release_notes: false

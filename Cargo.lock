@@ -340,7 +340,7 @@ checksum = "75984efb6ed102a0d42db99afb6c1948f0380d1d91808d5529916e6c08b49d8d"
 
 [[package]]
 name = "confcli"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "assert_cmd",

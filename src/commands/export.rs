@@ -13,7 +13,7 @@ use url::Url;
 use crate::cli::ExportArgs;
 use crate::context::AppContext;
 use crate::download::{
-    DownloadRetry, attachment_download_url, download_to_file_with_retry,
+    DownloadRetry, DownloadToFileOptions, attachment_download_url, download_to_file_with_retry,
     fetch_page_with_body_format, sanitize_filename, unique_path,
 };
 use crate::helpers::*;
@@ -128,6 +128,7 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
             Some(bar)
         };
 
+        let verbose = ctx.verbose;
         let mut tasks = Vec::new();
         for item in selected {
             let permit = sem.clone().acquire_owned().await?;
@@ -137,9 +138,15 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
             let bar = total_bar.clone();
             tasks.push(tokio::spawn(async move {
                 let _permit = permit;
-                let path =
-                    download_attachment_item(&client, &origin, &attachments_dir, &item, quiet)
-                        .await?;
+                let path = download_attachment_item(
+                    &client,
+                    &origin,
+                    &attachments_dir,
+                    &item,
+                    verbose,
+                    quiet,
+                )
+                .await?;
                 if let Some(bar) = &bar {
                     bar.inc(1);
                 }
@@ -187,6 +194,7 @@ async fn download_attachment_item(
     origin: &Url,
     attachments_dir: &std::path::Path,
     item: &serde_json::Value,
+    verbose: u8,
     quiet: bool,
 ) -> Result<PathBuf> {
     let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
@@ -207,8 +215,13 @@ async fn download_attachment_item(
     let target_path = unique_path(attachments_dir.join(target_name));
 
     let url = attachment_download_url(origin, download)?;
-    let retry = DownloadRetry::default();
-    download_to_file_with_retry(client, url, &target_path, title, retry, None, quiet).await?;
+    let opts = DownloadToFileOptions {
+        retry: DownloadRetry::default(),
+        progress: None,
+        verbose,
+        quiet,
+    };
+    download_to_file_with_retry(client, url, &target_path, title, opts).await?;
 
     Ok(target_path)
 }
