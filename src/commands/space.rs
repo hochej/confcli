@@ -156,7 +156,46 @@ async fn space_create(client: &ApiClient, ctx: &AppContext, args: SpaceCreateArg
     let result = client.post_json(url, payload).await?;
 
     match args.output {
-        OutputFormat::Json => maybe_print_json(ctx, &result),
+        OutputFormat::Json => {
+            if args.compact_json {
+                let id = json_str(&result, "id");
+                let key = json_str(&result, "key");
+                let name = json_str(&result, "name");
+                let space_type = json_str(&result, "type");
+                let status = json_str(&result, "status");
+                let homepage_id = result
+                    .get("homepage")
+                    .and_then(|v| v.get("id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let webui = result
+                    .get("_links")
+                    .and_then(|v| v.get("webui"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let url = if !webui.is_empty() {
+                    format!("{}{webui}", client.base_url())
+                } else if !key.is_empty() {
+                    format!("{}/spaces/{key}", client.base_url())
+                } else {
+                    "".to_string()
+                };
+
+                let compact = json!({
+                    "id": id,
+                    "key": key,
+                    "name": name,
+                    "type": space_type,
+                    "status": status,
+                    "homepageId": homepage_id,
+                    "url": url,
+                });
+                maybe_print_json(ctx, &compact)
+            } else {
+                maybe_print_json(ctx, &result)
+            }
+        }
         fmt => {
             let rows = vec![
                 vec!["ID".to_string(), json_str(&result, "id")],
@@ -177,6 +216,35 @@ async fn space_delete(client: &ApiClient, ctx: &AppContext, args: SpaceDeleteArg
     let space_key = resolve_space_key(client, &space_id).await?;
 
     if ctx.dry_run {
+        if let Some(fmt) = args.output {
+            match fmt {
+                OutputFormat::Json => {
+                    return maybe_print_json(
+                        ctx,
+                        &json!({
+                            "dryRun": true,
+                            "deleted": false,
+                            "id": space_id,
+                            "key": space_key,
+                        }),
+                    );
+                }
+                other => {
+                    maybe_print_kv_fmt(
+                        ctx,
+                        other,
+                        vec![
+                            vec!["DryRun".to_string(), "true".to_string()],
+                            vec!["Deleted".to_string(), "false".to_string()],
+                            vec!["ID".to_string(), space_id],
+                            vec!["Key".to_string(), space_key],
+                        ],
+                    );
+                    return Ok(());
+                }
+            }
+        }
+
         print_line(ctx, &format!("Would delete space {space_key}"));
         return Ok(());
     }
@@ -200,6 +268,32 @@ async fn space_delete(client: &ApiClient, ctx: &AppContext, args: SpaceDeleteArg
     // Use v1 API — the v2 DELETE /spaces/{id} endpoint does not support space deletion.
     let url = client.v1_url(&format!("/space/{space_key}"));
     client.delete(url).await?;
-    print_line(ctx, &format!("Deleted space {space_key}"));
-    Ok(())
+
+    if let Some(fmt) = args.output {
+        match fmt {
+            OutputFormat::Json => maybe_print_json(
+                ctx,
+                &json!({
+                    "deleted": true,
+                    "id": space_id,
+                    "key": space_key,
+                }),
+            ),
+            other => {
+                maybe_print_kv_fmt(
+                    ctx,
+                    other,
+                    vec![
+                        vec!["Deleted".to_string(), "true".to_string()],
+                        vec!["ID".to_string(), space_id],
+                        vec!["Key".to_string(), space_key],
+                    ],
+                );
+                Ok(())
+            }
+        }
+    } else {
+        print_line(ctx, &format!("Deleted space {space_key}"));
+        Ok(())
+    }
 }

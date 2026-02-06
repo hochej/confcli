@@ -245,3 +245,51 @@ fn space_delete_help() {
         .success()
         .stdout(predicate::str::contains("Delete a space"));
 }
+
+#[test]
+#[cfg(feature = "write")]
+fn delete_commands_accept_output_flag() {
+    confcli()
+        .args(["space", "delete", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--output"));
+
+    confcli()
+        .args(["page", "delete", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--output"));
+
+    confcli()
+        .args(["attachment", "delete", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--output"));
+
+    confcli()
+        .args(["comment", "delete", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--output"));
+}
+
+#[test]
+#[cfg(feature = "write")]
+fn space_create_rejects_invalid_key() {
+    confcli()
+        .args([
+            "space",
+            "create",
+            "--key",
+            "bad",
+            "--name",
+            "x",
+            "--dry-run",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "space key must start with an uppercase letter",
+        ));
+}

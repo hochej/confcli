@@ -50,11 +50,13 @@ Use `--dry-run` to preview destructive operations without executing them.
 confcli space list
 confcli space get MFS
 confcli space pages MFS --tree
+confcli space create --key PROJ --name "Project" -o json --compact-json
 confcli space delete MFS --yes
 
 # Pages
 confcli page list --space MFS --title "Overview"
 confcli page get MFS:Overview                  # metadata (table)
+confcli page get MFS:Overview --show-body      # include body in table output
 confcli page get MFS:Overview -o json          # full JSON
 confcli page body MFS:Overview                 # markdown content
 confcli page body MFS:Overview --format storage

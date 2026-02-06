@@ -2,6 +2,25 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use confcli::output::OutputFormat;
 use std::path::PathBuf;
 
+fn parse_space_key(s: &str) -> Result<String, String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err("space key cannot be empty".to_string());
+    }
+    if s.len() < 2 || s.len() > 32 {
+        return Err("space key must be 2-32 characters".to_string());
+    }
+    let mut chars = s.chars();
+    let first = chars.next().unwrap();
+    if !first.is_ascii_uppercase() {
+        return Err("space key must start with an uppercase letter (A-Z)".to_string());
+    }
+    if !chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()) {
+        return Err("space key must contain only A-Z and 0-9".to_string());
+    }
+    Ok(s.to_string())
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "confcli",
@@ -188,12 +207,17 @@ pub struct SpacePagesArgs {
 #[cfg(feature = "write")]
 #[derive(Args, Debug)]
 pub struct SpaceCreateArgs {
-    #[arg(long, help = "Space key (uppercase, e.g. PROJ)")]
+    #[arg(long, value_parser = parse_space_key, help = "Space key (uppercase letters/numbers, e.g. PROJ)")]
     pub key: String,
     #[arg(long, help = "Space name")]
     pub name: String,
     #[arg(long, help = "Space description")]
     pub description: Option<String>,
+    #[arg(
+        long,
+        help = "When outputting JSON, print a small human-friendly object instead of the full API response"
+    )]
+    pub compact_json: bool,
     #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json or table")]
     pub output: OutputFormat,
 }
@@ -205,6 +229,8 @@ pub struct SpaceDeleteArgs {
     pub space: String,
     #[arg(short = 'y', long, help = "Skip confirmation prompt")]
     pub yes: bool,
+    #[arg(short = 'o', long, help = "Output format: json or table")]
+    pub output: Option<OutputFormat>,
 }
 
 // --- Page ---
@@ -272,6 +298,8 @@ pub struct PageGetArgs {
     pub version: Option<i64>,
     #[arg(long, help = "Preserve empty list items in markdown output")]
     pub keep_empty_list_items: bool,
+    #[arg(long, help = "Show the page body in table output (can be very large)")]
+    pub show_body: bool,
     #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: table, json, or markdown")]
     pub output: OutputFormat,
 }
@@ -372,6 +400,8 @@ pub struct PageDeleteArgs {
     pub force: bool,
     #[arg(short = 'y', long, help = "Skip confirmation prompt")]
     pub yes: bool,
+    #[arg(short = 'o', long, help = "Output format: json or table")]
+    pub output: Option<OutputFormat>,
 }
 
 #[derive(Args, Debug)]
@@ -512,6 +542,8 @@ pub struct AttachmentDeleteArgs {
     pub purge: bool,
     #[arg(short = 'y', long, help = "Skip confirmation prompt")]
     pub yes: bool,
+    #[arg(short = 'o', long, help = "Output format: json or table")]
+    pub output: Option<OutputFormat>,
 }
 
 // --- Label ---
@@ -655,6 +687,8 @@ pub struct CommentDeleteArgs {
     pub comment: String,
     #[arg(short = 'y', long, help = "Skip confirmation prompt")]
     pub yes: bool,
+    #[arg(short = 'o', long, help = "Output format: json or table")]
+    pub output: Option<OutputFormat>,
 }
 
 // --- Export ---

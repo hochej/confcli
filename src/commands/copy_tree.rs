@@ -46,8 +46,17 @@ async fn copy_tree(client: &ApiClient, ctx: &AppContext, args: CopyTreeArgs) -> 
         .to_string();
 
     // Descendants (no root).
-    let descendants_url = client.v2_url(&format!("/pages/{source_id}/descendants?limit=50"));
-    let descendants = client.get_paginated_results(descendants_url, true).await?;
+    // NOTE: Confluence's `/pages/{id}/descendants` endpoint appears to only include a limited
+    // depth on Cloud. Walk `direct-children` instead so deep trees are copied correctly.
+    let max_depth = if args.max_depth == 0 {
+        None
+    } else {
+        Some(args.max_depth)
+    };
+    let descendants = confcli::tree::fetch_descendants_via_direct_children(
+        client, &source_id, 50, true, max_depth,
+    )
+    .await?;
 
     let mut nodes: HashMap<String, Node> = HashMap::new();
 

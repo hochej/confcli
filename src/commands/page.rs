@@ -85,17 +85,38 @@ async fn page_list(client: &ApiClient, ctx: &AppContext, args: PageListArgs) -> 
 
 async fn page_get(client: &ApiClient, ctx: &AppContext, args: PageGetArgs) -> Result<()> {
     let page_id = resolve_page_id(client, &args.page).await?;
-    let mut url = client.v2_url(&format!(
-        "/pages/{page_id}?body-format={}",
-        args.body_format
-    ));
-    if let Some(version) = args.version {
-        url.push_str(&format!("&version={version}"));
-    }
-    let (json, _) = client.get_json(url).await?;
+
     match args.output {
-        OutputFormat::Json => maybe_print_json(ctx, &json),
+        OutputFormat::Json => {
+            let mut url = client.v2_url(&format!(
+                "/pages/{page_id}?body-format={}",
+                args.body_format
+            ));
+            if let Some(version) = args.version {
+                url.push_str(&format!("&version={version}"));
+            }
+            let (json, _) = client.get_json(url).await?;
+            maybe_print_json(ctx, &json)
+        }
         OutputFormat::Table => {
+            // By default, table output is metadata-only.
+            // Fetch body content only when explicitly requested.
+            let base = client.v2_url(&format!("/pages/{page_id}"));
+            let mut pairs: Vec<(&str, String)> = Vec::new();
+            if args.show_body {
+                pairs.push(("body-format", args.body_format.clone()));
+            }
+            if let Some(version) = args.version {
+                pairs.push(("version", version.to_string()));
+            }
+            let url = if pairs.is_empty() {
+                base
+            } else {
+                url_with_query(&base, &pairs)?
+            };
+
+            let (json, _) = client.get_json(url).await?;
+
             let space_id = json_str(&json, "spaceId");
             let space_key = resolve_space_key(client, &space_id)
                 .await
@@ -110,6 +131,7 @@ async fn page_get(client: &ApiClient, ctx: &AppContext, args: PageGetArgs) -> Re
                 .and_then(|v| v.get("number"))
                 .map(|v| v.to_string())
                 .unwrap_or_default();
+
             let mut rows = vec![
                 vec!["ID".to_string(), json_str(&json, "id")],
                 vec!["Title".to_string(), json_str(&json, "title")],
@@ -119,15 +141,17 @@ async fn page_get(client: &ApiClient, ctx: &AppContext, args: PageGetArgs) -> Re
                 vec!["Parent".to_string(), json_str(&json, "parentId")],
                 vec!["URL".to_string(), format!("{}{webui}", client.base_url())],
             ];
-            // Include body content when a body format was requested.
-            if let Some(body_value) = json
-                .get("body")
-                .and_then(|body| body.get(&args.body_format))
-                .and_then(|fmt| fmt.get("value"))
-                .and_then(|v| v.as_str())
+
+            if args.show_body
+                && let Some(body_value) = json
+                    .get("body")
+                    .and_then(|body| body.get(&args.body_format))
+                    .and_then(|fmt| fmt.get("value"))
+                    .and_then(|v| v.as_str())
             {
                 rows.push(vec!["Body".to_string(), body_value.to_string()]);
             }
+
             maybe_print_kv_fmt(ctx, OutputFormat::Table, rows);
             Ok(())
         }
@@ -557,8 +581,38 @@ async fn page_update(client: &ApiClient, ctx: &AppContext, args: PageUpdateArgs)
 async fn page_delete(client: &ApiClient, ctx: &AppContext, args: PageDeleteArgs) -> Result<()> {
     let page_id = resolve_page_id(client, &args.page).await?;
 
+    let action = if args.purge { "purge" } else { "delete" };
+
     if ctx.dry_run {
-        let action = if args.purge { "purge" } else { "delete" };
+        if let Some(fmt) = args.output {
+            match fmt {
+                OutputFormat::Json => {
+                    return maybe_print_json(
+                        ctx,
+                        &json!({
+                            "dryRun": true,
+                            "action": action,
+                            "deleted": false,
+                            "id": page_id,
+                        }),
+                    );
+                }
+                other => {
+                    maybe_print_kv_fmt(
+                        ctx,
+                        other,
+                        vec![
+                            vec!["DryRun".to_string(), "true".to_string()],
+                            vec!["Action".to_string(), action.to_string()],
+                            vec!["Deleted".to_string(), "false".to_string()],
+                            vec!["ID".to_string(), page_id],
+                        ],
+                    );
+                    return Ok(());
+                }
+            }
+        }
+
         print_line(ctx, &format!("Would {action} page {page_id}"));
         return Ok(());
     }
@@ -576,6 +630,7 @@ async fn page_delete(client: &ApiClient, ctx: &AppContext, args: PageDeleteArgs)
             return Ok(());
         }
     }
+
     if args.purge {
         let status = page_status(client, &page_id).await?;
         if status != "trashed" {
@@ -590,28 +645,59 @@ async fn page_delete(client: &ApiClient, ctx: &AppContext, args: PageDeleteArgs)
         let mut url = client.v2_url(&format!("/pages/{page_id}"));
         url.push_str("?purge=true");
         client.delete(url).await?;
-        print_line(ctx, &format!("Purged page {page_id}"));
-        Ok(())
     } else {
         let url = client.v2_url(&format!("/pages/{page_id}"));
         client.delete(url).await?;
-        print_line(ctx, &format!("Deleted page {page_id}"));
+    }
+
+    if let Some(fmt) = args.output {
+        match fmt {
+            OutputFormat::Json => maybe_print_json(
+                ctx,
+                &json!({
+                    "action": action,
+                    "deleted": true,
+                    "id": page_id,
+                }),
+            ),
+            other => {
+                maybe_print_kv_fmt(
+                    ctx,
+                    other,
+                    vec![
+                        vec!["Action".to_string(), action.to_string()],
+                        vec!["Deleted".to_string(), "true".to_string()],
+                        vec!["ID".to_string(), page_id],
+                    ],
+                );
+                Ok(())
+            }
+        }
+    } else {
+        let past = if args.purge { "Purged" } else { "Deleted" };
+        print_line(ctx, &format!("{past} page {page_id}"));
         Ok(())
     }
 }
 
 async fn page_children(client: &ApiClient, ctx: &AppContext, args: PageChildrenArgs) -> Result<()> {
     let page_id = resolve_page_id(client, &args.page).await?;
-    let endpoint = if args.recursive {
-        "descendants"
+
+    let items = if args.recursive {
+        // `/pages/{id}/descendants` looks like it only returns a limited depth on Cloud.
+        // Walk `direct-children` ourselves so `--recursive` truly means *all* descendants.
+        confcli::tree::fetch_descendants_via_direct_children(
+            client, &page_id, args.limit, args.all, None,
+        )
+        .await?
     } else {
-        "direct-children"
+        let url = url_with_query(
+            &client.v2_url(&format!("/pages/{page_id}/direct-children")),
+            &[("limit", args.limit.to_string())],
+        )?;
+        client.get_paginated_results(url, args.all).await?
     };
-    let url = url_with_query(
-        &client.v2_url(&format!("/pages/{page_id}/{endpoint}")),
-        &[("limit", args.limit.to_string())],
-    )?;
-    let items = client.get_paginated_results(url, args.all).await?;
+
     match args.output {
         OutputFormat::Json => maybe_print_json(ctx, &items),
         fmt => {

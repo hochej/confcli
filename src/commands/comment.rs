@@ -180,6 +180,33 @@ async fn comment_delete(
     args: CommentDeleteArgs,
 ) -> Result<()> {
     if ctx.dry_run {
+        if let Some(fmt) = args.output {
+            match fmt {
+                OutputFormat::Json => {
+                    return maybe_print_json(
+                        ctx,
+                        &json!({
+                            "dryRun": true,
+                            "deleted": false,
+                            "id": args.comment,
+                        }),
+                    );
+                }
+                other => {
+                    maybe_print_kv_fmt(
+                        ctx,
+                        other,
+                        vec![
+                            vec!["DryRun".to_string(), "true".to_string()],
+                            vec!["Deleted".to_string(), "false".to_string()],
+                            vec!["ID".to_string(), args.comment],
+                        ],
+                    );
+                    return Ok(());
+                }
+            }
+        }
+
         print_line(ctx, &format!("Would delete comment {}", args.comment));
         return Ok(());
     }
@@ -200,8 +227,32 @@ async fn comment_delete(
 
     let url = client.v1_url(&format!("/content/{}", args.comment));
     client.delete(url).await?;
-    print_line(ctx, &format!("Deleted comment {}", args.comment));
-    Ok(())
+
+    if let Some(fmt) = args.output {
+        match fmt {
+            OutputFormat::Json => maybe_print_json(
+                ctx,
+                &json!({
+                    "deleted": true,
+                    "id": args.comment,
+                }),
+            ),
+            other => {
+                maybe_print_kv_fmt(
+                    ctx,
+                    other,
+                    vec![
+                        vec!["Deleted".to_string(), "true".to_string()],
+                        vec!["ID".to_string(), args.comment],
+                    ],
+                );
+                Ok(())
+            }
+        }
+    } else {
+        print_line(ctx, &format!("Deleted comment {}", args.comment));
+        Ok(())
+    }
 }
 
 fn comment_location(item: &serde_json::Value) -> String {

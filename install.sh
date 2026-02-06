@@ -1,8 +1,13 @@
 #!/bin/sh
 # Install script for confcli
-# Usage: curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | sh
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | sh
 #
-# Options (via env vars):
+# Options (via env vars — set them on the `sh` side of the pipe):
+#   curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | INSTALL_DIR=~/.local/bin sh
+#   curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | VERSION=0.2.3 sh
+#
+# Env vars:
 #   INSTALL_DIR  — where to put the binary (default: /usr/local/bin or ~/.local/bin)
 #   VERSION      — specific version to install (default: latest)
 
@@ -13,9 +18,9 @@ BINARY="confcli"
 
 # --- helpers ----------------------------------------------------------------
 
-info()  { printf '  \033[1;34m→\033[0m %s\n' "$1"; }
-ok()    { printf '  \033[1;32m✓\033[0m %s\n' "$1"; }
-err()   { printf '  \033[1;31m✗\033[0m %s\n' "$1" >&2; exit 1; }
+info()  { printf '  \033[1;34m→\033[0m %s\n' "$1" >&2; }
+ok()    { printf '  \033[1;32m✓\033[0m %s\n' "$1" >&2; }
+err()   { printf '  \033[1;31m✗\033[0m %b\n' "$1" >&2; exit 1; }
 
 need() {
     command -v "$1" >/dev/null 2>&1 || err "Required tool '$1' not found. Please install it and retry."
@@ -98,7 +103,7 @@ main() {
     info "Downloading ${ASSET}…"
     TMPDIR_DL=$(mktemp -d)
     trap 'rm -rf "$TMPDIR_DL"' EXIT
-    HTTP_CODE=$(curl -fSL -w '%{http_code}' -o "${TMPDIR_DL}/${ASSET}" "$URL" 2>/dev/null) || true
+    HTTP_CODE=$(curl -fSL -w '%{http_code}' -o "${TMPDIR_DL}/${ASSET}" "$URL" 2>/dev/null || printf '000')
 
     [ "$HTTP_CODE" != "200" ] && err "Download failed (HTTP ${HTTP_CODE}). Check that v${VER} exists at:\n         ${URL}"
 

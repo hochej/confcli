@@ -5,6 +5,8 @@ use confcli::output::OutputFormat;
 #[cfg(feature = "write")]
 use dialoguer::Confirm;
 use indicatif::{ProgressBar, ProgressStyle};
+#[cfg(feature = "write")]
+use serde_json::json;
 use url::Url;
 
 use crate::cli::*;
@@ -218,8 +220,38 @@ async fn attachment_delete(
     ctx: &AppContext,
     args: AttachmentDeleteArgs,
 ) -> Result<()> {
+    let action = if args.purge { "purge" } else { "delete" };
+
     if ctx.dry_run {
-        let action = if args.purge { "purge" } else { "delete" };
+        if let Some(fmt) = args.output {
+            match fmt {
+                OutputFormat::Json => {
+                    return maybe_print_json(
+                        ctx,
+                        &json!({
+                            "dryRun": true,
+                            "action": action,
+                            "deleted": false,
+                            "id": args.attachment,
+                        }),
+                    );
+                }
+                other => {
+                    maybe_print_kv_fmt(
+                        ctx,
+                        other,
+                        vec![
+                            vec!["DryRun".to_string(), "true".to_string()],
+                            vec!["Action".to_string(), action.to_string()],
+                            vec!["Deleted".to_string(), "false".to_string()],
+                            vec!["ID".to_string(), args.attachment],
+                        ],
+                    );
+                    return Ok(());
+                }
+            }
+        }
+
         print_line(
             ctx,
             &format!("Would {action} attachment {}", args.attachment),
@@ -240,11 +272,39 @@ async fn attachment_delete(
             return Ok(());
         }
     }
+
     let mut url = client.v2_url(&format!("/attachments/{}", args.attachment));
     if args.purge {
         url.push_str("?purge=true");
     }
     client.delete(url).await?;
-    print_line(ctx, &format!("Deleted attachment {}", args.attachment));
-    Ok(())
+
+    if let Some(fmt) = args.output {
+        match fmt {
+            OutputFormat::Json => maybe_print_json(
+                ctx,
+                &json!({
+                    "action": action,
+                    "deleted": true,
+                    "id": args.attachment,
+                }),
+            ),
+            other => {
+                maybe_print_kv_fmt(
+                    ctx,
+                    other,
+                    vec![
+                        vec!["Action".to_string(), action.to_string()],
+                        vec!["Deleted".to_string(), "true".to_string()],
+                        vec!["ID".to_string(), args.attachment],
+                    ],
+                );
+                Ok(())
+            }
+        }
+    } else {
+        let past = if args.purge { "Purged" } else { "Deleted" };
+        print_line(ctx, &format!("{past} attachment {}", args.attachment));
+        Ok(())
+    }
 }

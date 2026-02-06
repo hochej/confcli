@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Installer**: `curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | sh` now works (fixed stdout pollution breaking version detection) and README examples for `VERSION`/`INSTALL_DIR` piping are correct.
+- **Deep page trees**: `page children --recursive` and `copy-tree` now correctly traverse/copy deep hierarchies by walking `direct-children` instead of relying on the limited `/descendants` endpoint.
+- **`page get -o table` output** no longer dumps the full page body by default; use `--show-body` to include it.
+
+### Added
+
+- **`space create --compact-json`** for smaller, human-friendly JSON output.
+- **Consistent delete output flags**: `space delete`, `page delete`, `attachment delete`, and `comment delete` now accept `-o/--output`.
+- **Client-side validation** for `space create --key`.
+
 ## [0.2.3] - 2026-02-05
 
 ### Fixed

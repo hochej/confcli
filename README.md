@@ -18,11 +18,11 @@
 curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | sh
 ```
 
-Options via environment variables:
+Options via environment variables (these vars must be set on the `sh` side of the pipe):
 
 ```bash
-VERSION=0.2.3 curl -fsSL … | sh   # pin a specific version
-INSTALL_DIR=~/.bin curl -fsSL … | sh   # custom install directory
+curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | VERSION=0.2.3 sh
+curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | INSTALL_DIR=~/.bin sh
 ```
 
 Or download a binary manually from [GitHub Releases](https://github.com/hochej/confcli/releases).
@@ -81,6 +81,8 @@ Every command supports `--help` for full usage details.
 ### Key features
 
 - **Output formats** — All commands accept `-o json`, `-o table` (default), or `-o md`.
+- **Page content vs metadata** — `confcli page get` (table) is metadata-only by default; use `confcli page body` for content, or `confcli page get --show-body` if you explicitly want the body in the table.
+- **Compact JSON where APIs are noisy** — `confcli space create -o json --compact-json` prints a small, human-friendly JSON object instead of the full v1 API response.
 - **Dry run** — Use `--dry-run` before any destructive operation to preview what would happen.
 - **`Space:Title` addressing** — Reference pages as `MFS:Overview` instead of numeric IDs.
 - **Piping** — `--body-file -` reads from stdin; combine with other tools.
