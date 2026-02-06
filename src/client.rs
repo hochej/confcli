@@ -105,7 +105,10 @@ impl ApiClient {
         Duration::from_secs(2u64.pow(attempt - 1)) + jitter(Duration::from_millis(250))
     }
 
-    async fn send(&self, method: Method, url: String) -> Result<Response> {
+    async fn send_impl<F>(&self, method: Method, url: String, mut configure: F) -> Result<Response>
+    where
+        F: FnMut(reqwest::RequestBuilder) -> reqwest::RequestBuilder,
+    {
         let mut attempts = 0;
 
         loop {
@@ -116,8 +119,10 @@ impl ApiClient {
                     eprintln!("{} {}", method, url);
                 }
             }
+
             let start = std::time::Instant::now();
             let builder = self.http.request(method.clone(), url.clone());
+            let builder = configure(builder);
             let builder = self.apply_auth(builder)?;
 
             match builder.send().await {
@@ -154,7 +159,8 @@ impl ApiClient {
                 Err(e) => {
                     if attempts < MAX_ATTEMPTS {
                         attempts += 1;
-                        let wait = Duration::from_secs(2u64.pow(attempts - 1));
+                        // No response headers on request errors; still use the same backoff+jitter.
+                        let wait = Self::retry_wait_from_headers(&HeaderMap::new(), attempts);
                         if self.verbose > 0 {
                             eprintln!("Request error: {}, retrying in {:?}...", e, wait);
                         }
@@ -165,6 +171,10 @@ impl ApiClient {
                 }
             }
         }
+    }
+
+    async fn send(&self, method: Method, url: String) -> Result<Response> {
+        self.send_impl(method, url, |b| b).await
     }
 
     /// Send a request with a JSON body, using the same retry logic as `send()`.
@@ -175,65 +185,7 @@ impl ApiClient {
         url: String,
         body: &Value,
     ) -> Result<Response> {
-        let mut attempts = 0;
-
-        loop {
-            if self.verbose > 0 {
-                if attempts > 0 {
-                    eprintln!("{} {} (retry {})", method, url, attempts);
-                } else {
-                    eprintln!("{} {}", method, url);
-                }
-            }
-            let start = std::time::Instant::now();
-            let builder = self.http.request(method.clone(), url.clone()).json(body);
-            let builder = self.apply_auth(builder)?;
-
-            match builder.send().await {
-                Ok(response) => {
-                    if self.verbose > 1 {
-                        eprintln!("<- {} ({:?})", response.status(), start.elapsed());
-                        if let Some(id) = request_id(response.headers()) {
-                            eprintln!("<- request-id: {id}");
-                        }
-                    }
-
-                    if response.status().is_success() {
-                        return Ok(response);
-                    }
-
-                    let status = response.status();
-                    if attempts < MAX_ATTEMPTS && (status == 429 || status.is_server_error()) {
-                        attempts += 1;
-                        let wait = Self::retry_wait_from_headers(response.headers(), attempts);
-                        if self.verbose > 0 {
-                            eprintln!("Received {}, retrying in {:?}...", status, wait);
-                        }
-                        tokio::time::sleep(wait).await;
-                        continue;
-                    }
-
-                    let body = response.text().await.unwrap_or_default();
-                    let msg = friendly_error(status, &body);
-                    if self.verbose > 0 {
-                        return Err(anyhow!(format!("{msg}\n\nResponse body:\n{body}")));
-                    }
-                    bail!("{msg}");
-                }
-                Err(e) => {
-                    if attempts < MAX_ATTEMPTS {
-                        attempts += 1;
-                        let wait = Duration::from_secs(2u64.pow(attempts - 1));
-                        if self.verbose > 0 {
-                            eprintln!("Request error: {}, retrying in {:?}...", e, wait);
-                        }
-                        tokio::time::sleep(wait).await;
-                        continue;
-                    }
-                    return Err(e.into());
-                }
-            }
-        }
+        self.send_impl(method, url, |b| b.json(body)).await
     }
 
     pub async fn get_json(&self, url: String) -> Result<(Value, HeaderMap)> {
@@ -244,9 +196,22 @@ impl ApiClient {
     }
 
     pub async fn get_paginated_results(&self, url: String, all: bool) -> Result<Vec<Value>> {
+        const MAX_PAGES: usize = 10_000;
+
         let mut results = Vec::new();
         let mut next_url: Option<String> = Some(url);
+        let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut pages = 0usize;
+
         while let Some(url) = next_url {
+            pages += 1;
+            if pages > MAX_PAGES {
+                bail!("Pagination aborted after {MAX_PAGES} pages (possible looping 'next' link)");
+            }
+            if !visited.insert(url.clone()) {
+                bail!("Pagination loop detected: already visited next URL: {url}");
+            }
+
             let (json, headers) = self.get_json(url).await?;
             if let Some(array) = json.get("results").and_then(|v| v.as_array()) {
                 results.extend(array.iter().cloned());
@@ -259,6 +224,7 @@ impl ApiClient {
             if !all {
                 break;
             }
+
             next_url = next_link_from_headers(&headers).or_else(|| next_link_from_body(&json));
             if let Some(next) = &next_url {
                 if next.starts_with("http") {
@@ -296,8 +262,8 @@ impl ApiClient {
 
     /// Upload an attachment via the v1 API.
     ///
-    /// No retry logic: the stream body is consumed on the first attempt and
-    /// cannot be replayed.
+    /// Retries are implemented by re-opening the file and rebuilding the
+    /// multipart form on each attempt.
     #[cfg(feature = "write")]
     pub async fn upload_attachment(
         &self,
@@ -309,36 +275,81 @@ impl ApiClient {
         let file_name = file_path
             .file_name()
             .and_then(|v| v.to_str())
-            .context("Invalid file name")?;
-        let file = tokio::fs::File::open(file_path).await?;
-        let metadata = file.metadata().await?;
-        let size = metadata.len();
-        let stream = ReaderStream::new(file);
-        let body = Body::wrap_stream(stream);
-        let part = multipart::Part::stream_with_length(body, size).file_name(file_name.to_string());
-        let mut form = multipart::Form::new().part("file", part);
-        if let Some(comment) = comment {
-            form = form.text("comment", comment);
-        }
-        let builder = self
-            .http
-            .post(url)
-            .multipart(form)
-            .header("X-Atlassian-Token", "no-check");
-        let builder = self.apply_auth(builder)?;
-        let response = builder.send().await?;
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            let msg = friendly_error(status, &body);
+            .context("Invalid file name")?
+            .to_string();
+
+        let mut attempts = 0;
+        loop {
             if self.verbose > 0 {
-                return Err(anyhow!(format!(
-                    "Upload failed: {msg}\n\nResponse body:\n{body}"
-                )));
+                if attempts > 0 {
+                    eprintln!("POST {} (upload retry {})", url, attempts);
+                } else {
+                    eprintln!("POST {} (upload)", url);
+                }
             }
-            bail!("Upload failed: {msg}");
+
+            let file = tokio::fs::File::open(file_path)
+                .await
+                .with_context(|| format!("Failed to open attachment: {}", file_path.display()))?;
+            let metadata = file.metadata().await?;
+            let size = metadata.len();
+
+            let stream = ReaderStream::new(file);
+            let body = Body::wrap_stream(stream);
+            let part = multipart::Part::stream_with_length(body, size).file_name(file_name.clone());
+
+            let mut form = multipart::Form::new().part("file", part);
+            if let Some(comment) = comment.clone() {
+                form = form.text("comment", comment);
+            }
+
+            let builder = self
+                .http
+                .post(url.clone())
+                .multipart(form)
+                .header("X-Atlassian-Token", "no-check");
+            let builder = self.apply_auth(builder)?;
+
+            match builder.send().await {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        return Ok(response.json::<Value>().await?);
+                    }
+
+                    let status = response.status();
+                    if attempts < MAX_ATTEMPTS && (status == 429 || status.is_server_error()) {
+                        attempts += 1;
+                        let wait = Self::retry_wait_from_headers(response.headers(), attempts);
+                        if self.verbose > 0 {
+                            eprintln!("Upload received {}, retrying in {:?}...", status, wait);
+                        }
+                        tokio::time::sleep(wait).await;
+                        continue;
+                    }
+
+                    let body = response.text().await.unwrap_or_default();
+                    let msg = friendly_error(status, &body);
+                    if self.verbose > 0 {
+                        return Err(anyhow!(format!(
+                            "Upload failed: {msg}\n\nResponse body:\n{body}"
+                        )));
+                    }
+                    bail!("Upload failed: {msg}");
+                }
+                Err(e) => {
+                    if attempts < MAX_ATTEMPTS {
+                        attempts += 1;
+                        let wait = Self::retry_wait_from_headers(&HeaderMap::new(), attempts);
+                        if self.verbose > 0 {
+                            eprintln!("Upload request error: {}, retrying in {:?}...", e, wait);
+                        }
+                        tokio::time::sleep(wait).await;
+                        continue;
+                    }
+                    return Err(e.into());
+                }
+            }
         }
-        Ok(response.json::<Value>().await?)
     }
 }
 

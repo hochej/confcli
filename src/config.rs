@@ -143,7 +143,7 @@ impl Config {
     }
 }
 
-fn normalize_site_url(input: &str) -> Result<String> {
+pub fn normalize_site_url(input: &str) -> Result<String> {
     // Accept bare domains; default to https.
     let mut s = input.trim().to_string();
     if !s.starts_with("http://") && !s.starts_with("https://") {
@@ -170,6 +170,43 @@ fn normalize_site_url(input: &str) -> Result<String> {
     // Normalize: strip trailing `/`.
     let normalized = url.as_str().trim_end_matches('/').to_string();
     Ok(normalized)
+}
+
+/// Normalize a Confluence site URL and also return its origin (`scheme://host(:port)`).
+///
+/// This is shared between config loading and the interactive auth flow to avoid
+/// subtle drift in URL handling.
+pub fn normalize_site_url_and_origin(input: &str) -> Result<(String, String)> {
+    let site_url = normalize_site_url(input)?;
+    let site = Url::parse(&site_url).context("Invalid Confluence URL")?;
+    let origin = format!(
+        "{}://{}{}",
+        site.scheme(),
+        site.host_str().unwrap_or_default(),
+        match site.port() {
+            Some(port) => format!(":{port}"),
+            None => "".to_string(),
+        }
+    );
+    Ok((site_url, origin))
+}
+
+/// Default v1 REST API path for a given site URL.
+pub fn default_api_path_v1(site_url: &str) -> String {
+    if site_url.trim_end_matches('/').ends_with("/wiki") {
+        "/wiki/rest/api".to_string()
+    } else {
+        "/rest/api".to_string()
+    }
+}
+
+/// Derive the v2 REST API path from a v1 path when possible.
+pub fn derive_api_path_v2(api_path_v1: &str) -> String {
+    if let Some(prefix) = api_path_v1.trim_end_matches('/').strip_suffix("/rest/api") {
+        format!("{prefix}/api/v2")
+    } else {
+        "/api/v2".to_string()
+    }
 }
 
 fn normalize_full_url(input: &str) -> Result<String> {
@@ -206,28 +243,18 @@ fn api_bases_from_env_or_defaults(site_url: &str) -> Result<(String, String)> {
         .ok()
         .filter(|s| !s.trim().is_empty())
         .map(|s| ensure_leading_slash(&s))
-        .unwrap_or_else(|| {
-            if site.host_str().unwrap_or("").ends_with(".atlassian.net") {
-                "/wiki/rest/api".to_string()
-            } else {
-                "/rest/api".to_string()
-            }
-        });
+        .unwrap_or_else(|| default_api_path_v1(site_url));
 
     let api_base_v1 = format!("{}{}", origin, api_path_v1.trim_end_matches('/'));
 
     // Derive v2 base from v1 path when possible: `/.../rest/api` -> `/.../api/v2`.
-    let api_path_v2 = if let Some(prefix) = api_path_v1.strip_suffix("/rest/api") {
-        format!("{prefix}/api/v2")
-    } else {
-        "/api/v2".to_string()
-    };
+    let api_path_v2 = derive_api_path_v2(&api_path_v1);
     let api_base_v2 = format!("{}{}", origin, api_path_v2.trim_end_matches('/'));
 
     Ok((api_base_v1, api_base_v2))
 }
 
-fn ensure_leading_slash(s: &str) -> String {
+pub fn ensure_leading_slash(s: &str) -> String {
     let trimmed = s.trim();
     if trimmed.starts_with('/') {
         trimmed.to_string()

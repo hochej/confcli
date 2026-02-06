@@ -3,7 +3,6 @@ use confcli::client::ApiClient;
 use confcli::json_util::json_str;
 use confcli::markdown::{MarkdownOptions, html_to_markdown_with_options};
 use confcli::output::OutputFormat;
-use regex::Regex;
 use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -97,7 +96,11 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
         let url = client.v2_url(&format!("/pages/{page_id}/attachments?limit=50"));
         let items = client.get_paginated_results(url, true).await?;
 
-        let matcher = args.pattern.as_deref().map(glob_to_regex).transpose()?;
+        let matcher = args
+            .pattern
+            .as_deref()
+            .map(confcli::pattern::glob_to_regex_ci)
+            .transpose()?;
 
         let selected: Vec<serde_json::Value> = items
             .into_iter()
@@ -224,24 +227,4 @@ async fn download_attachment_item(
     download_to_file_with_retry(client, url, &target_path, title, opts).await?;
 
     Ok(target_path)
-}
-
-fn glob_to_regex(glob: &str) -> Result<Regex> {
-    let mut re = String::from("^");
-    for ch in glob.chars() {
-        match ch {
-            '*' => re.push_str(".*"),
-            '?' => re.push('.'),
-            '.' | '+' | '(' | ')' | '|' | '^' | '$' | '{' | '}' | '[' | ']' | '\\' => {
-                re.push('\\');
-                re.push(ch);
-            }
-            _ => re.push(ch),
-        }
-    }
-    re.push('$');
-    regex::RegexBuilder::new(&re)
-        .case_insensitive(true)
-        .build()
-        .map_err(|e| anyhow::anyhow!("Invalid glob pattern: {e}"))
 }

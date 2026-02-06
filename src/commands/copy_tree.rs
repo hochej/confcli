@@ -2,9 +2,8 @@ use anyhow::{Context, Result};
 use confcli::client::ApiClient;
 use confcli::json_util::json_str;
 use confcli::output::OutputFormat;
-use regex::Regex;
 use serde_json::{Value, json};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -34,7 +33,11 @@ async fn copy_tree(client: &ApiClient, ctx: &AppContext, args: CopyTreeArgs) -> 
     let source_id = resolve_page_id(client, &args.source).await?;
     let target_parent_id = resolve_page_id(client, &args.target_parent).await?;
 
-    let exclude = args.exclude.as_deref().map(glob_to_regex_ci).transpose()?;
+    let exclude = args
+        .exclude
+        .as_deref()
+        .map(confcli::pattern::glob_to_regex_ci)
+        .transpose()?;
 
     // SpaceId: inferred from target parent.
     let target_parent_url = client.v2_url(&format!("/pages/{target_parent_id}"));
@@ -109,6 +112,18 @@ async fn copy_tree(client: &ApiClient, ctx: &AppContext, args: CopyTreeArgs) -> 
     }
 
     // Exclusion: skip nodes whose title matches, and their descendants.
+    // Build a full parent->children adjacency list once, then BFS from the
+    // initially-blocked nodes to mark all descendants.
+    let mut all_children: HashMap<String, Vec<String>> = HashMap::new();
+    for (id, node) in &nodes {
+        if let Some(parent) = &node.parent_id {
+            all_children
+                .entry(parent.clone())
+                .or_default()
+                .push(id.clone());
+        }
+    }
+
     let mut blocked: HashSet<String> = HashSet::new();
     if let Some(re) = &exclude {
         for (id, node) in &nodes {
@@ -120,20 +135,15 @@ async fn copy_tree(client: &ApiClient, ctx: &AppContext, args: CopyTreeArgs) -> 
             }
         }
     }
+
     if !blocked.is_empty() {
-        // Propagate to descendants.
-        let mut changed = true;
-        while changed {
-            changed = false;
-            for (id, node) in &nodes {
-                if blocked.contains(id) {
-                    continue;
-                }
-                if let Some(parent) = &node.parent_id
-                    && blocked.contains(parent)
-                {
-                    blocked.insert(id.clone());
-                    changed = true;
+        let mut q: VecDeque<String> = blocked.iter().cloned().collect();
+        while let Some(id) = q.pop_front() {
+            if let Some(kids) = all_children.get(&id) {
+                for kid in kids {
+                    if blocked.insert(kid.clone()) {
+                        q.push_back(kid.clone());
+                    }
                 }
             }
         }
@@ -343,24 +353,4 @@ async fn copy_tree(client: &ApiClient, ctx: &AppContext, args: CopyTreeArgs) -> 
             Ok(())
         }
     }
-}
-
-fn glob_to_regex_ci(glob: &str) -> Result<Regex> {
-    let mut re = String::from("^");
-    for ch in glob.chars() {
-        match ch {
-            '*' => re.push_str(".*"),
-            '?' => re.push('.'),
-            '.' | '+' | '(' | ')' | '|' | '^' | '$' | '{' | '}' | '[' | ']' | '\\' => {
-                re.push('\\');
-                re.push(ch);
-            }
-            _ => re.push(ch),
-        }
-    }
-    re.push('$');
-    regex::RegexBuilder::new(&re)
-        .case_insensitive(true)
-        .build()
-        .map_err(|e| anyhow::anyhow!("Invalid glob pattern: {e}"))
 }

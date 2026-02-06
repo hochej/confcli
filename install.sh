@@ -54,13 +54,13 @@ resolve_version() {
     fi
 
     info "Fetching latest release…"
-    tag=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-        | grep '"tag_name"' \
-        | head -1 \
-        | sed 's/.*"tag_name": *"//;s/".*//' \
-        | sed 's/^v//')
 
-    [ -z "$tag" ] && err "Could not determine latest version. Set VERSION=x.y.z and retry."
+    # Avoid brittle JSON parsing (and GitHub API rate limits) by following the
+    # redirect of the human "latest" URL.
+    tag_url=$(curl -fsSL -o /dev/null -w '%{url_effective}' -L "https://github.com/${REPO}/releases/latest" || true)
+    tag=$(printf '%s' "$tag_url" | sed 's#.*/tag/##' | sed 's/^v//')
+
+    [ -z "$tag" ] && err "Could not determine latest version. Set VERSION=x.y.z and retry. (latest URL: ${tag_url})"
     echo "$tag"
 }
 

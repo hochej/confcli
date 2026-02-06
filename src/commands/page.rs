@@ -9,6 +9,10 @@ use confcli::output::{OutputFormat, print_json};
 use dialoguer::Confirm;
 #[cfg(feature = "write")]
 use serde_json::{Value, json};
+#[cfg(feature = "write")]
+use similar::TextDiff;
+#[cfg(feature = "write")]
+use tempfile::TempDir;
 
 use crate::cli::*;
 use crate::context::AppContext;
@@ -322,19 +326,17 @@ async fn page_edit(client: &ApiClient, ctx: &AppContext, args: PageEditArgs) -> 
         (original_body.clone(), "html")
     };
 
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let tmp_dir = std::env::temp_dir();
-    let orig_path = tmp_dir.join(format!("confcli-edit-{page_id}-{stamp}.orig.{ext}"));
-    let edit_path = tmp_dir.join(format!("confcli-edit-{page_id}-{stamp}.{ext}"));
+    // Keep temp files isolated and auto-cleaned.
+    let tmp = TempDir::new().context("Failed to create temp directory")?;
+    let orig_path = tmp.path().join(format!("original.{ext}"));
+    let edit_path = tmp.path().join(format!("edited.{ext}"));
 
     tokio::fs::write(&orig_path, orig_for_file.as_bytes()).await?;
     tokio::fs::write(&edit_path, orig_for_file.as_bytes()).await?;
 
     // Open $EDITOR (or $VISUAL, or vi) and wait.
-    let editor = std::env::var("EDITOR")
+    // Support common values like: `code --wait`.
+    let editor_str = std::env::var("EDITOR")
         .ok()
         .filter(|s| !s.trim().is_empty())
         .or_else(|| {
@@ -343,7 +345,15 @@ async fn page_edit(client: &ApiClient, ctx: &AppContext, args: PageEditArgs) -> 
                 .filter(|s| !s.trim().is_empty())
         })
         .unwrap_or_else(|| "vi".to_string());
-    let status_code = std::process::Command::new(editor)
+
+    let mut parts = shell_words::split(&editor_str).unwrap_or_else(|_| vec![editor_str.clone()]);
+    if parts.is_empty() {
+        parts.push("vi".to_string());
+    }
+    let editor_cmd = parts.remove(0);
+
+    let status_code = std::process::Command::new(editor_cmd)
+        .args(parts)
         .arg(&edit_path)
         .status()
         .context("Failed to launch editor")?;
@@ -358,12 +368,14 @@ async fn page_edit(client: &ApiClient, ctx: &AppContext, args: PageEditArgs) -> 
     }
 
     if args.diff {
-        // Best-effort: use system `diff -u`.
-        let _ = std::process::Command::new("diff")
-            .args(["-u"])
-            .arg(&orig_path)
-            .arg(&edit_path)
-            .status();
+        let diff = TextDiff::from_lines(&orig_for_file, &edited);
+        let unified = diff
+            .unified_diff()
+            .context_radius(3)
+            .header("original", "edited")
+            .to_string();
+        // Print to stdout (similar to `diff -u`).
+        print!("{unified}");
     }
 
     if !args.yes {

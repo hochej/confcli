@@ -1,9 +1,11 @@
 use anyhow::{Context, Result};
 use confcli::auth::AuthMethod;
 use confcli::client::ApiClient;
-use confcli::config::Config;
+use confcli::config::{
+    Config, default_api_path_v1, derive_api_path_v2, ensure_leading_slash,
+    normalize_site_url_and_origin,
+};
 use dialoguer::{Input, Password};
-use url::Url;
 
 use crate::cli::{AuthCommand, AuthLoginArgs};
 use crate::context::AppContext;
@@ -155,62 +157,4 @@ async fn auth_status(ctx: &AppContext) -> Result<()> {
         ),
     );
     Ok(())
-}
-
-fn normalize_site_url_and_origin(input: &str) -> Result<(String, String)> {
-    let trimmed = input.trim();
-    let with_scheme = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-        trimmed.to_string()
-    } else {
-        format!("https://{trimmed}")
-    };
-    let mut url = Url::parse(&with_scheme).context("Invalid Confluence URL")?;
-    match url.scheme() {
-        "http" | "https" => {}
-        scheme => {
-            return Err(anyhow::anyhow!(
-                "Invalid URL scheme '{scheme}'. Use http or https."
-            ));
-        }
-    }
-    let host = url
-        .host_str()
-        .ok_or_else(|| anyhow::anyhow!("Invalid Confluence URL: missing host"))?;
-    let port = url.port().map(|p| format!(":{p}")).unwrap_or_default();
-    let origin = format!("{}://{}{}", url.scheme(), host, port);
-
-    // Default web UI base for Cloud if the user only gave the domain.
-    let is_cloud = host.ends_with(".atlassian.net");
-    let path = url.path().trim_end_matches('/');
-    if is_cloud && (path.is_empty() || path == "/") {
-        url.set_path("/wiki");
-    }
-
-    let site_url = url.as_str().trim_end_matches('/').to_string();
-    Ok((site_url, origin))
-}
-
-fn ensure_leading_slash(s: &str) -> String {
-    let trimmed = s.trim();
-    if trimmed.starts_with('/') {
-        trimmed.to_string()
-    } else {
-        format!("/{trimmed}")
-    }
-}
-
-fn default_api_path_v1(site_url: &str) -> String {
-    if site_url.trim_end_matches('/').ends_with("/wiki") {
-        "/wiki/rest/api".to_string()
-    } else {
-        "/rest/api".to_string()
-    }
-}
-
-fn derive_api_path_v2(api_path_v1: &str) -> String {
-    if let Some(prefix) = api_path_v1.trim_end_matches('/').strip_suffix("/rest/api") {
-        format!("{prefix}/api/v2")
-    } else {
-        "/api/v2".to_string()
-    }
 }
