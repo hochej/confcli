@@ -6,6 +6,7 @@
 
 ### Added
 
+- **Apache 2.0 license**: added `LICENSE` file and `license` field in `Cargo.toml`.
 - **Retry & pagination tests**: unit tests for HTTP retry logic (500 retries, no retry on 400), pagination loop detection, and max-page abort in `client.rs`.
 - **Download retry tests**: unit tests for download retry on 500 and no-retry on 404 in `download.rs`.
 - **`tokio` test-util**: added `test-util` feature to dev-dependencies for time control in tests.

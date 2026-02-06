@@ -184,7 +184,10 @@ fn auth_status_not_logged_in() {
         .args(["auth", "status"])
         // Run from a temp dir so dotenvy doesn't load the project's .env
         .current_dir(temp_dir.path())
+        // Override both XDG_CONFIG_HOME (Linux) and HOME (macOS, where
+        // dirs::config_dir() returns ~/Library/Application Support).
         .env("XDG_CONFIG_HOME", temp_dir.path())
+        .env("HOME", temp_dir.path())
         .env_remove("CONFLUENCE_DOMAIN")
         .env_remove("CONFLUENCE_BASE_URL")
         .env_remove("CONFLUENCE_URL")
@@ -204,6 +207,7 @@ fn quiet_suppresses_auth_status_output() {
         // Run from a temp dir so dotenvy doesn't load anything unexpected.
         .current_dir(temp_dir.path())
         .env("XDG_CONFIG_HOME", temp_dir.path())
+        .env("HOME", temp_dir.path())
         .env_remove("CONFLUENCE_DOMAIN")
         .env_remove("CONFLUENCE_BASE_URL")
         .env_remove("CONFLUENCE_URL")
