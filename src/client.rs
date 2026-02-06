@@ -2,7 +2,7 @@ use crate::auth::AuthMethod;
 use crate::pagination::{next_link_from_body, next_link_from_headers};
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
-use http::HeaderMap;
+use reqwest::header::HeaderMap;
 #[cfg(feature = "write")]
 use reqwest::{Body, multipart};
 use reqwest::{Client as HttpClient, Method, Response};
@@ -382,16 +382,32 @@ fn jitter(max: Duration) -> Duration {
 /// when `-v/-vv` is enabled.
 pub fn friendly_error(status: reqwest::StatusCode, body: &str) -> String {
     fn clean(s: &str, max_chars: usize) -> String {
-        let joined = s.split_whitespace().collect::<Vec<_>>().join(" ");
+        // Stream whitespace-collapsing + truncation into a single String.
+        // Avoids allocating an intermediate Vec (split_whitespace -> collect -> join).
         let mut out = String::new();
-        for (i, ch) in joined.chars().enumerate() {
-            if i >= max_chars {
-                out.push('…');
-                break;
+        let mut count = 0usize;
+
+        for word in s.split_whitespace() {
+            if !out.is_empty() {
+                if count >= max_chars {
+                    out.push('…');
+                    return out;
+                }
+                out.push(' ');
+                count += 1;
             }
-            out.push(ch);
+
+            for ch in word.chars() {
+                if count >= max_chars {
+                    out.push('…');
+                    return out;
+                }
+                out.push(ch);
+                count += 1;
+            }
         }
-        out.trim().to_string()
+
+        out
     }
 
     // Extract a message/title field from Confluence error JSON (best-effort).

@@ -3,6 +3,7 @@ use confcli::client::ApiClient;
 use confcli::json_util::json_str;
 use confcli::markdown::{MarkdownOptions, html_to_markdown_with_options};
 use confcli::output::OutputFormat;
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -132,13 +133,15 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
         };
 
         let verbose = ctx.verbose;
-        let mut tasks = Vec::new();
+        let mut tasks: FuturesUnordered<_> = FuturesUnordered::new();
+
         for item in selected {
             let permit = sem.clone().acquire_owned().await?;
             let client = client.clone();
             let origin = origin.clone();
             let attachments_dir = attachments_dir.clone();
             let bar = total_bar.clone();
+
             tasks.push(tokio::spawn(async move {
                 let _permit = permit;
                 let path = download_attachment_item(
@@ -157,8 +160,8 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
             }));
         }
 
-        for task in tasks {
-            let path = task.await.context("Attachment download task failed")??;
+        while let Some(res) = tasks.next().await {
+            let path = res.context("Attachment download task failed")??;
             attachments_written.push(path);
         }
 

@@ -11,7 +11,6 @@ use crate::cli::{SpaceCommand, SpaceGetArgs, SpaceListArgs, SpacePagesArgs};
 #[cfg(feature = "write")]
 use crate::cli::{SpaceCreateArgs, SpaceDeleteArgs};
 use crate::context::AppContext;
-#[cfg(feature = "write")]
 use crate::helpers::print_line;
 use crate::helpers::{maybe_print_json, maybe_print_kv_fmt, maybe_print_rows, url_with_query};
 use crate::resolve::{build_page_tree, resolve_space_id, resolve_space_key};
@@ -104,7 +103,7 @@ async fn space_pages(client: &ApiClient, ctx: &AppContext, args: SpacePagesArgs)
             _ => {
                 let tree = build_page_tree(&items);
                 for line in tree {
-                    println!("{line}");
+                    print_line(ctx, &line);
                 }
                 Ok(())
             }

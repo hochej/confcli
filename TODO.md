@@ -24,6 +24,29 @@ The 10 issues previously tracked under **🟠 Bad Implementations** have been fi
 - Pagination now detects looping `next` links and caps maximum pages
 - `install.sh` no longer parses GitHub JSON with `grep|sed` (uses redirect-based resolution)
 
+## ✅ Fixed (follow-up)
+
+Additional high-impact fixes applied after this audit:
+
+- Markdown hot path: lifted all regex compilations into `static LazyLock<Regex>` (`src/markdown.rs`)
+- Download temp files: tmp name now includes `time+pid+counter` to avoid collisions (`src/download.rs`)
+- Download atomic replace: replaced blocking `dest.exists()` with async `tokio::fs::try_exists()` (`src/download.rs`)
+- Export: attachment downloads now use `FuturesUnordered` instead of storing all `JoinHandle`s (`src/commands/export.rs`)
+- Copy-tree: concurrent body fetch now uses `FuturesUnordered` (`src/commands/copy_tree.rs`)
+- Resolve: tree rendering no longer clones whole JSON blobs and no longer recurses (`src/resolve.rs`)
+- Resolve: URL page-id parsing no longer allocates a `Vec` of segments (`src/resolve.rs`)
+- Errors: `friendly_error()` now streams whitespace cleanup without intermediate allocations (`src/client.rs`)
+- Config: `Config::save()` now writes atomically (temp + fsync + rename) (`src/config.rs`)
+- Config: `Config::from_env()` now errors when base URL is set but auth is incomplete (`src/config.rs`)
+- CLI: `--quiet` help text now matches actual behaviour (“Suppress all output”) (`src/cli.rs`)
+- Release/install: release workflow publishes SHA256, installer verifies checksum and defensively extracts (`.github/workflows/release.yml`, `install.sh`)
+- Quiet: `--quiet` now truly suppresses *all* output (stdout + stderr) in command handlers, diff output, completions, and top-level error handling (`src/main.rs`, `src/commands/{page,space}.rs`)
+- Dependencies: removed direct dependency on the `http` crate (use `reqwest::header::HeaderMap` instead) (`Cargo.toml`, `src/{client,download,pagination}.rs`)
+- Toolchain pinning: added `rust-toolchain.toml` (Rust 1.93.0) for reproducible builds
+- CI: added Windows + macOS to the matrix and added a `cargo audit` job (`.github/workflows/ci.yml`)
+- Docs: clarified Windows config-file permission semantics in `README.md`
+- Tests: removed deprecated `assert_cmd` API usage and added coverage for `--quiet` + URL/query helpers (`tests/cli.rs`, `src/helpers.rs`)
+
 ---
 
 ## 🟡 Inefficiencies & Performance
@@ -62,9 +85,8 @@ The 10 issues previously tracked under **🟠 Bad Implementations** have been fi
 
 ## 🔵 Code Quality & Maintainability
 
-### 1. `--quiet` semantics are inconsistent and documentation disagrees with the CLI
-- **File:** `src/cli.rs:L36` vs `AGENTS.md:L46` and various commands
-- **Fix:** Decide contract and enforce via helpers.
+### 1. ✅ Fixed — `--quiet` semantics are consistent
+- Enforced `--quiet` suppression across commands, completions, and top-level error handling.
 
 ### 2. Missing error handling: page body extraction silently returns empty string
 - **File:** `src/download.rs:L36-L37`
@@ -78,9 +100,8 @@ The 10 issues previously tracked under **🟠 Bad Implementations** have been fi
 - **File:** `src/config.rs:L48-L87`
 - **Fix:** If base URL present, validate required env vars and return a clear error.
 
-### 5. Config permissions are only enforced on Unix, but docs claim 0600 generally
-- **File:** `src/config.rs:L101-L107`
-- **Fix:** Update docs or harden Windows too.
+### 5. ✅ Fixed — Docs clarify config permissions on Windows
+- Updated `README.md` to clarify Unix `0600` vs Windows ACL semantics.
 
 ### 6. URL parsing in `extract_page_id_from_url()` allocates unnecessarily
 - **File:** `src/resolve.rs:L145`
@@ -90,32 +111,31 @@ The 10 issues previously tracked under **🟠 Bad Implementations** have been fi
 - **File:** `install.sh`, `.github/workflows/release.yml`
 - **Fix:** Publish/verify SHA256; safer tar extraction.
 
-### 8. Tests are mostly help-text checks
-- **File:** `tests/cli.rs`
-- **Fix:** Add unit tests for URL encoding, pagination loop safety, retries, etc.
+### 8. 🟡 Partially fixed — Tests now cover some non-help behaviour
+- Added unit tests for pagination link parsing and URL query encoding, plus an integration test for `--quiet`.
+- Remaining: add coverage for pagination loop safety, retries, and more edge cases.
 
-### 9. Deprecated API used in tests
-- **File:** `tests/cli.rs:L5-L7`
-- **Fix:** Update to current `assert_cmd` idioms.
+### 9. ✅ Fixed — Tests use current `assert_cmd` idioms
+- Updated `tests/cli.rs` to use `assert_cmd::cargo::cargo_bin!`.
 
 ---
 
 ## ⚪ Configuration & Infrastructure
 
-### 1. CI does not run any dependency/security scanning
-- **Fix:** Add `cargo audit` or `cargo deny`.
+### 1. ✅ Fixed — CI runs dependency/security scanning
+- Added a `cargo audit --deny warnings` job in `.github/workflows/ci.yml`.
 
-### 2. CI only runs on Ubuntu
-- **Fix:** Add Windows/macOS to the matrix.
+### 2. ✅ Fixed — CI runs on multiple OSes
+- Added Windows + macOS to the CI matrix in `.github/workflows/ci.yml`.
 
-### 3. Release artifacts are packaged without checksums
-- **Fix:** Generate and upload `sha256sum` files.
+### 3. ✅ Fixed — Release artifacts have integrity verification
+- Release workflow uploads `.sha256` checksums and `install.sh` verifies them.
 
-### 4. Dependency bloat: `http` crate exists just for `HeaderMap`
-- **Fix:** Use `reqwest::header` and drop `http`.
+### 4. ✅ Fixed — Removed `http` dependency
+- Switched to `reqwest::header::HeaderMap` and dropped the direct `http` crate dependency.
 
 ### 5. Installer has no strategy for GitHub API rate limiting
 - **Fix:** Support `GITHUB_TOKEN` and detect rate-limit errors.
 
-### 6. No toolchain pinning for reproducible builds
-- **Fix:** Add `rust-toolchain.toml`.
+### 6. ✅ Fixed — Toolchain pinning for reproducible builds
+- Added `rust-toolchain.toml`.

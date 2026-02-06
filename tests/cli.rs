@@ -2,8 +2,7 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 fn confcli() -> Command {
-    #[allow(deprecated)]
-    Command::cargo_bin("confcli").unwrap()
+    Command::new(assert_cmd::cargo::cargo_bin!("confcli"))
 }
 
 #[test]
@@ -181,6 +180,25 @@ fn auth_status_not_logged_in() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Not logged in"));
+}
+
+#[test]
+fn quiet_suppresses_auth_status_output() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    confcli()
+        .args(["-q", "auth", "status"])
+        // Run from a temp dir so dotenvy doesn't load anything unexpected.
+        .current_dir(temp_dir.path())
+        .env("XDG_CONFIG_HOME", temp_dir.path())
+        .env_remove("CONFLUENCE_DOMAIN")
+        .env_remove("CONFLUENCE_BASE_URL")
+        .env_remove("CONFLUENCE_URL")
+        .env_remove("CONFLUENCE_EMAIL")
+        .env_remove("CONFLUENCE_TOKEN")
+        .env_remove("CONFLUENCE_BEARER_TOKEN")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
 }
 
 #[test]

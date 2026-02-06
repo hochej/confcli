@@ -1,4 +1,4 @@
-use http::HeaderMap;
+use reqwest::header::HeaderMap;
 
 pub fn next_link_from_headers(headers: &HeaderMap) -> Option<String> {
     let link = headers.get("link")?.to_str().ok()?;
@@ -21,4 +21,35 @@ pub fn next_link_from_body(value: &serde_json::Value) -> Option<String> {
         .and_then(|links| links.get("next"))
         .and_then(|next| next.as_str())
         .map(|s| s.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reqwest::header::HeaderValue;
+
+    #[test]
+    fn parses_next_link_from_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "link",
+            HeaderValue::from_static(
+                "<https://example.com/api?page=2>; rel=next, <https://example.com/api?page=5>; rel=last",
+            ),
+        );
+        assert_eq!(
+            next_link_from_headers(&headers),
+            Some("https://example.com/api?page=2".to_string())
+        );
+    }
+
+    #[test]
+    fn returns_none_when_no_next_link() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "link",
+            HeaderValue::from_static("<https://example.com/api?page=5>; rel=last"),
+        );
+        assert_eq!(next_link_from_headers(&headers), None);
+    }
 }

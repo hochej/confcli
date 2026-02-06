@@ -34,6 +34,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.93.0
           targets: ${{ matrix.target }}
 
       - name: Install cross-compilation tools (Linux ARM64)
@@ -52,11 +53,20 @@ jobs:
           tar -czvf ../../../${{ matrix.name }}.tar.gz confcli
           cd ../../..
 
+          # Generate SHA256 checksum for installer integrity verification.
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${{ matrix.name }}.tar.gz" > "${{ matrix.name }}.tar.gz.sha256"
+          else
+            shasum -a 256 "${{ matrix.name }}.tar.gz" > "${{ matrix.name }}.tar.gz.sha256"
+          fi
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
-          path: ${{ matrix.name }}.tar.gz
+          path: |
+            ${{ matrix.name }}.tar.gz
+            ${{ matrix.name }}.tar.gz.sha256
 
   release:
     needs: build
@@ -81,6 +91,8 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*.tar.gz
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.sha256
           body_path: RELEASE_NOTES.md
           generate_release_notes: false

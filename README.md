@@ -90,7 +90,7 @@ Every command supports `--help` for full usage details.
 
 ## Authentication & Security
 
-Credentials are stored as plaintext JSON with `0600` permissions:
+Credentials are stored as plaintext JSON. On Unix we set restrictive `0600` permissions (best-effort). On Windows, file permissions are managed by NTFS ACLs.
 
 | OS | Path |
 |---|---|

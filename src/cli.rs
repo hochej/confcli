@@ -29,12 +29,7 @@ fn parse_space_key(s: &str) -> Result<String, String> {
     after_help = "EXAMPLES:\n  confcli auth login --domain yourcompany.atlassian.net --email you@example.com --token <token>\n  confcli space list --all\n  confcli space pages MFS --tree\n  confcli page get MFS:Overview\n  confcli search \"confluence\"\n  echo '<p>Hello</p>' | confcli page create --space MFS --title Hello --body-file -\n"
 )]
 pub struct Cli {
-    #[arg(
-        short = 'q',
-        long,
-        global = true,
-        help = "Suppress non-essential output"
-    )]
+    #[arg(short = 'q', long, global = true, help = "Suppress all output")]
     pub quiet: bool,
     #[arg(short = 'v', long, global = true, action = clap::ArgAction::Count, help = "Increase verbosity (-v, -vv)")]
     pub verbose: u8,

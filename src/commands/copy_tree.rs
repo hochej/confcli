@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use confcli::client::ApiClient;
 use confcli::json_util::json_str;
 use confcli::output::OutputFormat;
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
@@ -183,7 +184,7 @@ async fn copy_tree(client: &ApiClient, ctx: &AppContext, args: CopyTreeArgs) -> 
         bar.set_message("page bodies");
         Some(bar)
     };
-    let mut tasks = Vec::new();
+    let mut tasks: FuturesUnordered<_> = FuturesUnordered::new();
     for (id, node) in nodes.iter() {
         if id == &source_id {
             continue;
@@ -211,8 +212,9 @@ async fn copy_tree(client: &ApiClient, ctx: &AppContext, args: CopyTreeArgs) -> 
             res
         }));
     }
-    for task in tasks {
-        let (id, body) = task.await.context("Fetch task failed")??;
+
+    while let Some(res) = tasks.next().await {
+        let (id, body) = res.context("Fetch task failed")??;
         if let Some(node) = nodes.get_mut(&id) {
             node.body_storage = Some(body);
         }

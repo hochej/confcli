@@ -359,7 +359,6 @@ dependencies = [
  "dotenvy",
  "futures-util",
  "htmd",
- "http",
  "humansize",
  "indicatif",
  "lru",

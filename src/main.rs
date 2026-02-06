@@ -38,14 +38,16 @@ async fn main() -> Result<()> {
         Commands::Export(args) => commands::export::handle(&ctx, args).await,
         #[cfg(feature = "write")]
         Commands::CopyTree(args) => commands::copy_tree::handle(&ctx, args).await,
-        Commands::Completions(args) => generate_completions(args),
+        Commands::Completions(args) => generate_completions(&ctx, args),
     };
 
     if let Err(err) = result {
-        if ctx.verbose > 0 {
-            eprintln!("{err:?}");
-        } else {
-            eprintln!("{}", format_error_chain(&err));
+        if !ctx.quiet {
+            if ctx.verbose > 0 {
+                eprintln!("{err:?}");
+            } else {
+                eprintln!("{}", format_error_chain(&err));
+            }
         }
         std::process::exit(1);
     }
@@ -62,7 +64,10 @@ fn format_error_chain(err: &anyhow::Error) -> String {
     out
 }
 
-fn generate_completions(args: cli::CompletionsArgs) -> Result<()> {
+fn generate_completions(ctx: &AppContext, args: cli::CompletionsArgs) -> Result<()> {
+    if ctx.quiet {
+        return Ok(());
+    }
     let mut cmd = Cli::command();
     let shell = match args.shell {
         Shell::Bash => clap_complete::Shell::Bash,

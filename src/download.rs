@@ -1,10 +1,11 @@
 use anyhow::{Context, Result};
 use confcli::client::ApiClient;
 use futures_util::StreamExt;
-use http::HeaderMap;
 use indicatif::ProgressBar;
+use reqwest::header::HeaderMap;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use url::Url;
 
 #[derive(Debug, Clone, Copy)]
@@ -33,7 +34,11 @@ pub async fn fetch_page_with_body_format(
         .and_then(|body| body.get(body_format))
         .and_then(|body| body.get("value"))
         .and_then(|value| value.as_str())
-        .unwrap_or("")
+        .with_context(|| {
+            format!(
+                "Page {page_id} response missing body.{body_format}.value (unexpected API response shape)"
+            )
+        })?
         .to_string();
     Ok((json, body))
 }
@@ -169,7 +174,7 @@ pub async fn download_to_file_with_retry(
         }
 
         // Atomic-ish on POSIX; on Windows rename can fail if dest exists.
-        if dest.exists() {
+        if tokio::fs::try_exists(dest).await.unwrap_or(false) {
             tokio::fs::remove_file(dest).await.ok();
         }
         tokio::fs::rename(&tmp, dest).await.with_context(|| {
@@ -223,22 +228,27 @@ pub fn unique_path(path: PathBuf) -> PathBuf {
     path
 }
 
+static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 fn tmp_path(dest: &Path) -> PathBuf {
     let base = dest
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("download");
-    let stamp = chronoish_now_for_filename();
+    let stamp = unique_stamp_for_tmp_filename();
     dest.with_file_name(format!("{base}.{stamp}.tmp"))
 }
 
-fn chronoish_now_for_filename() -> String {
-    // Small, dependency-free timestamp for tmp filenames.
-    let ms = std::time::SystemTime::now()
+fn unique_stamp_for_tmp_filename() -> String {
+    // Include time + pid + monotonic counter to avoid collisions under
+    // concurrent downloads (and across very fast retries).
+    let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    format!("{ms}")
+        .unwrap_or_default();
+    let ns = now.as_nanos();
+    let pid = std::process::id();
+    let ctr = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{ns}-{pid}-{ctr}")
 }
 
 #[cfg(test)]

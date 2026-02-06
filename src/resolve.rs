@@ -165,13 +165,19 @@ pub async fn resolve_space_keys(
 }
 
 pub fn extract_page_id_from_url(url: &Url) -> Option<String> {
-    let segments: Vec<&str> = url.path_segments()?.collect();
-    if let Some(pos) = segments.iter().position(|seg| *seg == "pages")
-        && let Some(id) = segments.get(pos + 1)
-        && id.chars().all(|c| c.is_ascii_digit())
-    {
-        return Some(id.to_string());
+    if let Some(segments) = url.path_segments() {
+        let mut iter = segments;
+        while let Some(seg) = iter.next() {
+            if seg == "pages"
+                && let Some(id) = iter.next()
+                && !id.is_empty()
+                && id.chars().all(|c| c.is_ascii_digit())
+            {
+                return Some(id.to_string());
+            }
+        }
     }
+
     url.query_pairs()
         .find(|(key, _)| key == "pageId")
         .map(|(_, value)| value.to_string())
@@ -189,41 +195,83 @@ pub async fn page_status(client: &ApiClient, page_id: &str) -> Result<String> {
 }
 
 pub fn build_page_tree(items: &[Value]) -> Vec<String> {
-    let mut children: HashMap<String, Vec<Value>> = HashMap::new();
-    let mut roots = Vec::new();
+    #[derive(Debug, Clone)]
+    struct NodeView {
+        id: String,
+        parent_id: String,
+        title: String,
+        child_position: i64,
+    }
+
+    // Avoid cloning full JSON blobs into the tree structure; we only need a few fields.
+    let mut roots: Vec<NodeView> = Vec::new();
+    let mut children: HashMap<String, Vec<NodeView>> = HashMap::new();
+
     for item in items {
-        let parent = item.get("parentId").and_then(|v| v.as_str()).unwrap_or("");
-        if parent.is_empty() {
-            roots.push(item.clone());
+        let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        if id.is_empty() {
+            continue;
+        }
+        let parent_id = item
+            .get("parentId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let title = item
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let child_position = item
+            .get("childPosition")
+            .and_then(|p| p.as_i64())
+            .unwrap_or(0);
+
+        let view = NodeView {
+            id: id.to_string(),
+            parent_id,
+            title,
+            child_position,
+        };
+
+        if view.parent_id.is_empty() {
+            roots.push(view);
         } else {
             children
-                .entry(parent.to_string())
+                .entry(view.parent_id.clone())
                 .or_default()
-                .push(item.clone());
+                .push(view);
         }
     }
 
-    let mut lines = Vec::new();
-    for root in roots {
-        walk_tree(&root, &children, 0, &mut lines);
+    // Keep output stable/predictable.
+    roots.sort_by_key(|n| n.child_position);
+    for kids in children.values_mut() {
+        kids.sort_by_key(|n| n.child_position);
     }
+
+    // Iterative traversal to avoid deep recursion on large trees.
+    let mut lines: Vec<String> = Vec::new();
+    let mut stack: Vec<(NodeView, usize)> = Vec::new();
+
+    for root in roots.into_iter().rev() {
+        stack.push((root, 0));
+    }
+
+    while let Some((node, depth)) = stack.pop() {
+        lines.push(format!(
+            "{}- {} ({})",
+            "  ".repeat(depth),
+            node.title,
+            node.id
+        ));
+
+        if let Some(kids) = children.get(&node.id) {
+            for kid in kids.iter().cloned().rev() {
+                stack.push((kid, depth + 1));
+            }
+        }
+    }
+
     lines
-}
-
-fn walk_tree(
-    node: &Value,
-    children: &HashMap<String, Vec<Value>>,
-    depth: usize,
-    lines: &mut Vec<String>,
-) {
-    let title = node.get("title").and_then(|v| v.as_str()).unwrap_or("");
-    let id = node.get("id").and_then(|v| v.as_str()).unwrap_or("");
-    lines.push(format!("{}- {} ({})", "  ".repeat(depth), title, id));
-    if let Some(children_nodes) = children.get(id) {
-        let mut sorted = children_nodes.clone();
-        sorted.sort_by_key(|v| v.get("childPosition").and_then(|p| p.as_i64()).unwrap_or(0));
-        for child in sorted {
-            walk_tree(&child, children, depth + 1, lines);
-        }
-    }
 }

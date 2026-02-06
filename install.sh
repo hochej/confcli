@@ -26,6 +26,19 @@ need() {
     command -v "$1" >/dev/null 2>&1 || err "Required tool '$1' not found. Please install it and retry."
 }
 
+sha256_file() {
+    # Print the SHA256 hash (hex) for a given file.
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | cut -d ' ' -f 1
+        return
+    fi
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | cut -d ' ' -f 1
+        return
+    fi
+    err "Required tool 'sha256sum' (Linux) or 'shasum' (macOS) not found. Please install one and retry."
+}
+
 # --- detect platform --------------------------------------------------------
 
 detect_os() {
@@ -107,8 +120,30 @@ main() {
 
     [ "$HTTP_CODE" != "200" ] && err "Download failed (HTTP ${HTTP_CODE}). Check that v${VER} exists at:\n         ${URL}"
 
-    # Extract
-    tar -xzf "${TMPDIR_DL}/${ASSET}" -C "$TMPDIR_DL"
+    # Verify SHA256 checksum (published alongside the release asset)
+    info "Verifying checksum…"
+    SHA_URL="${URL}.sha256"
+    HTTP_CODE_SHA=$(curl -fSL -w '%{http_code}' -o "${TMPDIR_DL}/${ASSET}.sha256" "$SHA_URL" 2>/dev/null || printf '000')
+    [ "$HTTP_CODE_SHA" != "200" ] && err "Checksum download failed (HTTP ${HTTP_CODE_SHA}). Expected:\n         ${SHA_URL}"
+
+    EXPECTED=$(cut -d ' ' -f 1 < "${TMPDIR_DL}/${ASSET}.sha256" | tr -d '\n')
+    ACTUAL=$(sha256_file "${TMPDIR_DL}/${ASSET}" | tr -d '\n')
+
+    [ -z "$EXPECTED" ] && err "Checksum file was empty or invalid: ${TMPDIR_DL}/${ASSET}.sha256"
+    [ "$EXPECTED" != "$ACTUAL" ] && err "Checksum mismatch for ${ASSET}.\n         Expected: ${EXPECTED}\n         Actual:   ${ACTUAL}"
+    ok "Checksum OK"
+
+    # Extract (defensive: ensure the archive contains only the expected binary)
+    info "Extracting…"
+    ENTRIES=$(tar -tzf "${TMPDIR_DL}/${ASSET}" 2>/dev/null || true)
+    COUNT=$(printf '%s\n' "$ENTRIES" | sed '/^$/d' | wc -l | tr -d ' ')
+    ENTRY_RAW=$(printf '%s\n' "$ENTRIES" | head -n 1)
+    ENTRY_NORM=$(printf '%s' "$ENTRY_RAW" | sed 's#^\./##')
+
+    [ "$COUNT" != "1" ] && err "Archive contained unexpected files:\n$ENTRIES"
+    [ "$ENTRY_NORM" != "$BINARY" ] && err "Archive did not contain expected '${BINARY}' binary (found: '${ENTRY_RAW}')."
+
+    tar -xzf "${TMPDIR_DL}/${ASSET}" -C "$TMPDIR_DL" "$ENTRY_RAW"
     [ ! -f "${TMPDIR_DL}/${BINARY}" ] && err "Archive did not contain '${BINARY}' binary."
     chmod +x "${TMPDIR_DL}/${BINARY}"
 

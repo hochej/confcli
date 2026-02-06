@@ -171,3 +171,23 @@ pub fn open_url(url: &str) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn url_with_query_round_trips_query_pairs() {
+        let out = url_with_query(
+            "https://example.com/api",
+            &[("q", "a b".to_string()), ("sym", "a&b=c".to_string())],
+        )
+        .unwrap();
+
+        let parsed = Url::parse(&out).unwrap();
+        let pairs: HashMap<String, String> = parsed.query_pairs().into_owned().collect();
+        assert_eq!(pairs.get("q"), Some(&"a b".to_string()));
+        assert_eq!(pairs.get("sym"), Some(&"a&b=c".to_string()));
+    }
+}

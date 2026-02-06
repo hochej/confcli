@@ -2,11 +2,50 @@ use anyhow::Result;
 use htmd::HtmlToMarkdown;
 use pulldown_cmark::{Options, Parser, html};
 use regex::Regex;
+use std::sync::LazyLock;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MarkdownOptions {
     pub keep_empty_list_items: bool,
 }
+
+// Regex compilation is fairly expensive and markdown conversion is a hot path.
+// Keep these compiled once for the lifetime of the process.
+static STYLE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)<style[^>]*>.*?</style>").expect("STYLE_RE"));
+static PANEL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?s)<div class="panel[^"]*"[^>]*>\s*<div class="panelContent[^"]*"[^>]*>(.*?)</div>\s*</div>"#,
+    )
+    .expect("PANEL_RE")
+});
+static STATUS_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?s)<span[^>]*class="[^"]*status-macro[^"]*"[^>]*>(.*?)</span>"#)
+        .expect("STATUS_RE")
+});
+static HREF_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"href="(/wiki[^"]*)""#).expect("HREF_RE"));
+static SRC_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"src="(/wiki[^"]*)""#).expect("SRC_RE"));
+
+static IMG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"<img([^>]*?)(/?)>"#).expect("IMG_RE"));
+static IMG_ALIAS_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"data-linked-resource-default-alias="([^"]+)""#).expect("IMG_ALIAS_RE")
+});
+static IMG_SRC_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?:data-image-src|src)="([^"]+)""#).expect("IMG_SRC_RE"));
+
+static TABLE_CELL_SEP_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^:?-{3,}:?$").expect("TABLE_CELL_SEP_RE"));
+static IMAGE_ONLY_CELL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^!\[[^\]]*\]\([^)]*\)$").expect("IMAGE_ONLY_CELL_RE"));
+
+static EMPTY_LIST_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*(?:[-*+]|\d+\.)\s*$").expect("EMPTY_LIST_RE"));
+static TABLE_SEP_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$").expect("TABLE_SEP_RE")
+});
 
 pub fn html_to_markdown(html: &str, base_url: &str) -> Result<String> {
     html_to_markdown_with_options(html, base_url, MarkdownOptions::default())
@@ -47,27 +86,19 @@ fn preprocess_html(html: &str, base_url: &str) -> Result<String> {
     let mut content = html.to_string();
     let base_root = base_url.trim_end_matches("/wiki");
 
-    let style_re = Regex::new(r"(?s)<style[^>]*>.*?</style>")?;
-    content = style_re.replace_all(&content, "").to_string();
+    content = STYLE_RE.replace_all(&content, "").to_string();
 
-    let panel_re = Regex::new(
-        r#"(?s)<div class="panel[^"]*"[^>]*>\s*<div class="panelContent[^"]*"[^>]*>(.*?)</div>\s*</div>"#,
-    )?;
-    content = panel_re
+    content = PANEL_RE
         .replace_all(&content, "<blockquote>$1</blockquote>")
         .to_string();
 
-    let status_re =
-        Regex::new(r#"(?s)<span[^>]*class="[^"]*status-macro[^"]*"[^>]*>(.*?)</span>"#)?;
-    content = status_re.replace_all(&content, "[$1]").to_string();
+    content = STATUS_RE.replace_all(&content, "[$1]").to_string();
 
-    let href_re = Regex::new(r#"href="(/wiki[^"]*)""#)?;
-    content = href_re
+    content = HREF_RE
         .replace_all(&content, format!("href=\"{}$1\"", base_root))
         .to_string();
 
-    let src_re = Regex::new(r#"src="(/wiki[^"]*)""#)?;
-    content = src_re
+    content = SRC_RE
         .replace_all(&content, format!("src=\"{}$1\"", base_root))
         .to_string();
 
@@ -78,22 +109,18 @@ fn preprocess_html(html: &str, base_url: &str) -> Result<String> {
 }
 
 fn add_image_alt_text(html: &str) -> String {
-    let img_re = Regex::new(r#"<img([^>]*?)(/?)>"#).unwrap();
-    let alias_re = Regex::new(r#"data-linked-resource-default-alias="([^"]+)""#).unwrap();
-    let src_re = Regex::new(r#"(?:data-image-src|src)="([^"]+)""#).unwrap();
-
-    img_re
+    IMG_RE
         .replace_all(html, |caps: &regex::Captures| {
             let attrs = caps.get(1).map(|m| m.as_str()).unwrap_or("");
             let closing = caps.get(2).map(|m| m.as_str()).unwrap_or("");
             if attrs.contains(" alt=") {
                 return format!("<img{attrs}{closing}>");
             }
-            let alt = if let Some(cap) = alias_re.captures(attrs) {
+            let alt = if let Some(cap) = IMG_ALIAS_RE.captures(attrs) {
                 cap.get(1)
                     .map(|m| m.as_str().to_string())
                     .unwrap_or_default()
-            } else if let Some(cap) = src_re.captures(attrs) {
+            } else if let Some(cap) = IMG_SRC_RE.captures(attrs) {
                 let raw = cap.get(1).map(|m| m.as_str()).unwrap_or("");
                 extract_filename(raw)
             } else {
@@ -175,28 +202,23 @@ fn table_cells(line: &str) -> Vec<String> {
 }
 
 fn separator_like_row(line: &str) -> bool {
-    let cell_re = Regex::new(r"^:?-{3,}:?$").unwrap();
     let cells = table_cells(line);
     if cells.is_empty() {
         return false;
     }
     cells
         .iter()
-        .all(|cell| cell.is_empty() || cell_re.is_match(cell))
+        .all(|cell| cell.is_empty() || TABLE_CELL_SEP_RE.is_match(cell))
 }
 
 fn is_image_only_cell(cell: &str) -> bool {
-    let image_re = Regex::new(r"^!\[[^\]]*\]\([^)]*\)$").unwrap();
-    image_re.is_match(cell.trim())
+    IMAGE_ONLY_CELL_RE.is_match(cell.trim())
 }
 
 fn postprocess_markdown(markdown: &str, options: MarkdownOptions) -> String {
-    let empty_list_re = Regex::new(r"^\s*(?:[-*+]|\d+\.)\s*$").unwrap();
-    let table_sep_re = Regex::new(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$").unwrap();
-
     let mut lines = Vec::new();
     for line in markdown.lines() {
-        if !options.keep_empty_list_items && empty_list_re.is_match(line) {
+        if !options.keep_empty_list_items && EMPTY_LIST_RE.is_match(line) {
             continue;
         }
         lines.push(line.to_string());
@@ -223,7 +245,7 @@ fn postprocess_markdown(markdown: &str, options: MarkdownOptions) -> String {
 
                 let data_rows: Vec<&String> = block
                     .iter()
-                    .filter(|row| !table_sep_re.is_match(row.as_str()))
+                    .filter(|row| !TABLE_SEP_RE.is_match(row.as_str()))
                     .collect();
                 if data_rows.len() == 1 {
                     let cells = table_cells(data_rows[0]);
@@ -234,7 +256,7 @@ fn postprocess_markdown(markdown: &str, options: MarkdownOptions) -> String {
                 }
 
                 let needs_separator = block.len() < 2
-                    || !table_sep_re.is_match(block.get(1).map(String::as_str).unwrap_or(""));
+                    || !TABLE_SEP_RE.is_match(block.get(1).map(String::as_str).unwrap_or(""));
                 if needs_separator {
                     let header = block[0].trim().trim_matches('|');
                     let columns = header.split('|').count().max(1);

@@ -4,7 +4,7 @@ use confcli::json_util::json_str;
 use confcli::markdown::{
     MarkdownOptions, decode_unicode_escapes_str, html_to_markdown_with_options,
 };
-use confcli::output::{OutputFormat, print_json};
+use confcli::output::OutputFormat;
 #[cfg(feature = "write")]
 use dialoguer::Confirm;
 #[cfg(feature = "write")]
@@ -180,7 +180,9 @@ async fn page_get(client: &ApiClient, ctx: &AppContext, args: PageGetArgs) -> Re
             } else {
                 add_markdown_header(client.base_url(), &view_json, &markdown)
             };
-            println!("{output}");
+            if !ctx.quiet {
+                println!("{output}");
+            }
             Ok(())
         }
     }
@@ -264,11 +266,12 @@ async fn page_body(client: &ApiClient, ctx: &AppContext, args: PageBodyArgs) -> 
                 "format": args.format,
                 "body": body_value,
             });
-            print_json(&obj)?;
-            Ok(())
+            maybe_print_json(ctx, &obj)
         }
         _ => {
-            println!("{body_value}");
+            if !ctx.quiet {
+                println!("{body_value}");
+            }
             Ok(())
         }
     }
@@ -375,7 +378,9 @@ async fn page_edit(client: &ApiClient, ctx: &AppContext, args: PageEditArgs) -> 
             .header("original", "edited")
             .to_string();
         // Print to stdout (similar to `diff -u`).
-        print!("{unified}");
+        if !ctx.quiet {
+            print!("{unified}");
+        }
     }
 
     if !args.yes {

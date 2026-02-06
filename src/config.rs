@@ -4,7 +4,9 @@ use dirs::config_dir;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use tempfile::NamedTempFile;
 use url::Url;
 
 #[cfg(unix)]
@@ -59,7 +61,9 @@ impl Config {
         let site_url = normalize_site_url(&base_input)?;
 
         // Competitor migration: allow `CONFLUENCE_API_TOKEN` as a synonym for `CONFLUENCE_TOKEN`.
-        let bearer = env::var("CONFLUENCE_BEARER_TOKEN").ok();
+        let bearer = env::var("CONFLUENCE_BEARER_TOKEN")
+            .ok()
+            .filter(|s| !s.trim().is_empty());
         if let Some(token) = bearer {
             let (api_base_v1, api_base_v2) = api_bases_from_env_or_defaults(&site_url)?;
             return Ok(Some(Config {
@@ -70,41 +74,87 @@ impl Config {
             }));
         }
 
-        let email = env::var("CONFLUENCE_EMAIL").ok();
+        let email = env::var("CONFLUENCE_EMAIL")
+            .ok()
+            .filter(|s| !s.trim().is_empty());
         let token = env::var("CONFLUENCE_TOKEN")
             .ok()
-            .or_else(|| env::var("CONFLUENCE_API_TOKEN").ok());
-        if let (Some(email), Some(token)) = (email, token) {
-            let (api_base_v1, api_base_v2) = api_bases_from_env_or_defaults(&site_url)?;
-            return Ok(Some(Config {
-                site_url,
-                api_base_v1,
-                api_base_v2,
-                auth: AuthMethod::Basic { email, token },
-            }));
-        }
+            .or_else(|| env::var("CONFLUENCE_API_TOKEN").ok())
+            .filter(|s| !s.trim().is_empty());
 
-        Ok(None)
+        match (email, token) {
+            (Some(email), Some(token)) => {
+                let (api_base_v1, api_base_v2) = api_bases_from_env_or_defaults(&site_url)?;
+                Ok(Some(Config {
+                    site_url,
+                    api_base_v1,
+                    api_base_v2,
+                    auth: AuthMethod::Basic { email, token },
+                }))
+            }
+            (None, None) => Err(anyhow::anyhow!(
+                "CONFLUENCE_BASE_URL/CONFLUENCE_URL/CONFLUENCE_DOMAIN is set, but no auth env vars were provided. Set either CONFLUENCE_BEARER_TOKEN, or both CONFLUENCE_EMAIL + CONFLUENCE_TOKEN."
+            )),
+            _ => Err(anyhow::anyhow!(
+                "Incomplete env-based auth: set both CONFLUENCE_EMAIL and CONFLUENCE_TOKEN (or use CONFLUENCE_BEARER_TOKEN)."
+            )),
+        }
     }
 
     pub fn save(&self) -> Result<()> {
         let path = Self::path()?;
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create config dir: {}", parent.display()))?;
-        }
+        let parent = path
+            .parent()
+            .context("Config path had no parent directory")?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create config dir: {}", parent.display()))?;
+
         // Always write normalized config to disk.
         let mut normalized = self.clone();
         normalized.normalize_and_backfill()?;
         let data = serde_json::to_string_pretty(&normalized)?;
-        fs::write(&path, data)
-            .with_context(|| format!("Failed to write config: {}", path.display()))?;
+
+        // Write atomically:
+        // 1) write to a temp file in the same directory
+        // 2) fsync temp file
+        // 3) rename into place
+        // 4) (best-effort) fsync directory
+        let mut tmp = NamedTempFile::new_in(parent)
+            .with_context(|| format!("Failed to create temp file in {}", parent.display()))?;
+        tmp.write_all(data.as_bytes())
+            .context("Failed to write config temp file")?;
+        tmp.as_file().sync_all().context("Failed to fsync config")?;
+
         #[cfg(unix)]
         {
+            // Ensure on-disk permissions are restrictive regardless of umask.
             let perms = fs::Permissions::from_mode(0o600);
-            fs::set_permissions(&path, perms)
-                .with_context(|| format!("Failed to set permissions: {}", path.display()))?;
+            fs::set_permissions(tmp.path(), perms)
+                .with_context(|| format!("Failed to set permissions: {}", tmp.path().display()))?;
         }
+
+        #[cfg(unix)]
+        {
+            // On Unix, rename atomically replaces the destination.
+            fs::rename(tmp.path(), &path)
+                .with_context(|| format!("Failed to write config: {}", path.display()))?;
+
+            // Best-effort: ensure rename is durable.
+            if let Ok(dir) = fs::File::open(parent) {
+                let _ = dir.sync_all();
+            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            // On Windows, rename fails if the destination exists.
+            let _ = fs::remove_file(&path);
+            tmp.persist(&path)
+                .map(|_| ())
+                .map_err(|e| e.error)
+                .with_context(|| format!("Failed to write config: {}", path.display()))?;
+        }
+
         Ok(())
     }
 
@@ -318,6 +368,28 @@ mod tests {
                 // SAFETY: guarded by ENV_LOCK.
                 unsafe { std::env::remove_var("CONFLUENCE_API_PATH") };
             }
+        }
+    }
+
+    #[test]
+    fn from_env_requires_auth_when_base_present() {
+        let _lock = ENV_LOCK.lock().unwrap();
+
+        // SAFETY: guarded by ENV_LOCK.
+        unsafe {
+            std::env::set_var("CONFLUENCE_BASE_URL", "example.atlassian.net");
+            std::env::remove_var("CONFLUENCE_EMAIL");
+            std::env::remove_var("CONFLUENCE_TOKEN");
+            std::env::remove_var("CONFLUENCE_API_TOKEN");
+            std::env::remove_var("CONFLUENCE_BEARER_TOKEN");
+        }
+
+        let err = Config::from_env().unwrap_err();
+        assert!(err.to_string().contains("no auth env vars"));
+
+        // Cleanup.
+        unsafe {
+            std::env::remove_var("CONFLUENCE_BASE_URL");
         }
     }
 }
