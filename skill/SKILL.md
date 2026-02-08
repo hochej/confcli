@@ -10,7 +10,28 @@ description:
 
 CLI for Confluence Cloud.
 
-## Prerequisites
+## Installation
+
+Check if confcli is installed:
+
+```bash
+command -v confcli
+```
+
+If not installed, install via:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | sh
+```
+
+To install a specific version or to a custom directory:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | VERSION=0.2.3 sh
+curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | INSTALL_DIR=~/.bin sh
+```
+
+## Authentication
 
 Check auth status first:
 
@@ -18,14 +39,19 @@ Check auth status first:
 confcli auth status
 ```
 
-If not authenticated, user must run `confcli auth login` interactively or set
-environment variables:
+If not authenticated, ask the user to configure authentication. They can either:
 
-- `CONFLUENCE_DOMAIN` - e.g. `yourcompany.atlassian.net`
-- `CONFLUENCE_EMAIL`
-- `CONFLUENCE_TOKEN` (or `CONFLUENCE_API_TOKEN`)
-- `CONFLUENCE_BEARER_TOKEN` - for OAuth
-- `CONFLUENCE_API_PATH` - override v1 API path for Server/DC
+1. Run `confcli auth login` interactively in their own terminal, or
+2. Set environment variables before starting the session:
+   - `CONFLUENCE_DOMAIN` — e.g. `yourcompany.atlassian.net`
+   - `CONFLUENCE_EMAIL`
+   - `CONFLUENCE_TOKEN` (or `CONFLUENCE_API_TOKEN`)
+
+API tokens are generated at
+https://id.atlassian.com/manage-profile/security/api-tokens
+
+> **Never ask the user to paste a token into the conversation.** Tokens must be
+> set via environment variables or `confcli auth login`.
 
 ## Page References
 
