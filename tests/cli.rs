@@ -11,7 +11,7 @@ fn help_flag() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("scrappy little Confluence CLI"));
+        .stdout(predicate::str::contains("confcli").and(predicate::str::contains("--dry-run")));
 }
 
 #[test]
@@ -39,7 +39,7 @@ fn auth_help() {
         .args(["auth", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Manage authentication"));
+        .stdout(predicate::str::contains("login").and(predicate::str::contains("status")));
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn space_help() {
         .args(["space", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("List and inspect spaces"));
+        .stdout(predicate::str::contains("list").and(predicate::str::contains("pages")));
 }
 
 #[test]
@@ -57,10 +57,7 @@ fn page_help() {
         .args(["page", "--help"])
         .assert()
         .success()
-        .stdout(
-            predicate::str::contains("List, view, create, and manage pages")
-                .or(predicate::str::contains("List and view pages")),
-        );
+        .stdout(predicate::str::contains("get").and(predicate::str::contains("body")));
 }
 
 #[test]
@@ -69,7 +66,7 @@ fn search_help() {
         .args(["search", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Search content"));
+        .stdout(predicate::str::contains("--space").and(predicate::str::contains("--limit")));
 }
 
 #[test]
@@ -78,11 +75,7 @@ fn attachment_help() {
         .args(["attachment", "--help"])
         .assert()
         .success()
-        .stdout(
-            predicate::str::contains("List, download, upload, and manage attachments").or(
-                predicate::str::contains("List, download, and inspect attachments"),
-            ),
-        );
+        .stdout(predicate::str::contains("download").and(predicate::str::contains("list")));
 }
 
 #[test]
@@ -91,10 +84,7 @@ fn label_help() {
         .args(["label", "--help"])
         .assert()
         .success()
-        .stdout(
-            predicate::str::contains("List, add, and remove page labels")
-                .or(predicate::str::contains("List page labels")),
-        );
+        .stdout(predicate::str::contains("list").and(predicate::str::contains("pages")));
 }
 
 #[test]
