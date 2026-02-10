@@ -1,8 +1,6 @@
 use crate::auth::AuthMethod;
 use crate::pagination::{next_link_from_body, next_link_from_headers};
-#[cfg(feature = "write")]
-use anyhow::Context;
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use reqwest::header::HeaderMap;
 #[cfg(feature = "write")]
@@ -222,7 +220,7 @@ impl ApiClient {
                 bail!("Pagination loop detected: already visited next URL: {url}");
             }
 
-            let (json, headers) = self.get_json(url).await?;
+            let (json, headers) = self.get_json(url.clone()).await?;
             if let Some(array) = json.get("results").and_then(|v| v.as_array()) {
                 results.extend(array.iter().cloned());
             } else if json.is_array() {
@@ -235,18 +233,11 @@ impl ApiClient {
                 break;
             }
 
-            next_url = next_link_from_headers(&headers).or_else(|| next_link_from_body(&json));
-            if let Some(next) = &next_url {
-                if next.starts_with("http") {
-                    continue;
-                }
-                let joined = if next.starts_with('/') {
-                    format!("{}{}", self.origin, next)
-                } else {
-                    format!("{}/{}", self.origin.trim_end_matches('/'), next)
-                };
-                next_url = Some(joined);
-            }
+            let next = next_link_from_headers(&headers).or_else(|| next_link_from_body(&json));
+            next_url = match next {
+                Some(next) => Some(resolve_next_page_url(&url, &next)?),
+                None => None,
+            };
         }
         Ok(results)
     }
@@ -361,6 +352,21 @@ impl ApiClient {
             }
         }
     }
+}
+
+fn resolve_next_page_url(current_url: &str, next: &str) -> Result<String> {
+    if let Ok(abs) = Url::parse(next) {
+        return Ok(abs.to_string());
+    }
+
+    let current = Url::parse(current_url)
+        .with_context(|| format!("Invalid pagination URL '{current_url}'"))?;
+    current
+        .join(next)
+        .with_context(|| {
+            format!("Failed to resolve pagination next link '{next}' from '{current_url}'")
+        })
+        .map(|u| u.to_string())
 }
 
 fn origin_from_url(site_url: &str) -> Result<String> {
@@ -672,6 +678,39 @@ mod tests {
         let msg = format!("{:#}", res.unwrap_err());
         assert!(msg.contains("Pagination aborted after 3 pages"));
         assert_eq!(srv.hits.load(Ordering::SeqCst), 3);
+
+        let _ = srv.shutdown.send(());
+    }
+
+    #[tokio::test]
+    async fn pagination_resolves_query_relative_next_against_current_url() {
+        let srv = start_server(|_base, hit, path| match hit {
+            1 => {
+                assert_eq!(path, "/wiki/api/v2/pages?limit=1");
+                (
+                    200,
+                    vec![("link".to_string(), "<?cursor=abc>; rel=next".to_string())],
+                    br#"{"results":[{"id":"1"}]}"#.to_vec(),
+                )
+            }
+            2 => {
+                assert_eq!(path, "/wiki/api/v2/pages?cursor=abc");
+                (200, vec![], br#"{"results":[{"id":"2"}]}"#.to_vec())
+            }
+            _ => panic!("unexpected request #{hit}: {path}"),
+        })
+        .await;
+
+        let client = test_client(&srv.base_url);
+        let url = srv.url("/wiki/api/v2/pages?limit=1");
+
+        let res = client
+            .get_paginated_results_with_limit(url, true, 10)
+            .await
+            .unwrap();
+
+        assert_eq!(res.len(), 2);
+        assert_eq!(srv.hits.load(Ordering::SeqCst), 2);
 
         let _ = srv.shutdown.send(());
     }
