@@ -199,35 +199,6 @@ pub fn sanitize_filename(input: &str) -> String {
     out.trim().to_string()
 }
 
-pub fn unique_path(path: PathBuf) -> PathBuf {
-    if !path.exists() {
-        return path;
-    }
-    let parent = path.parent().map(Path::to_path_buf).unwrap_or_default();
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file")
-        .to_string();
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_string();
-    for i in 1..10_000 {
-        let name = if ext.is_empty() {
-            format!("{stem} ({i})")
-        } else {
-            format!("{stem} ({i}).{ext}")
-        };
-        let candidate = parent.join(name);
-        if !candidate.exists() {
-            return candidate;
-        }
-    }
-    path
-}
-
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn tmp_path(dest: &Path) -> PathBuf {

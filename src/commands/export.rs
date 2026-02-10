@@ -4,7 +4,8 @@ use confcli::json_util::json_str;
 use confcli::markdown::{MarkdownOptions, html_to_markdown_with_options};
 use confcli::output::OutputFormat;
 use serde_json::json;
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
@@ -14,7 +15,7 @@ use crate::cli::ExportArgs;
 use crate::context::AppContext;
 use crate::download::{
     DownloadRetry, DownloadToFileOptions, attachment_download_url, download_to_file_with_retry,
-    fetch_page_with_body_format, sanitize_filename, unique_path,
+    fetch_page_with_body_format, sanitize_filename,
 };
 use crate::helpers::*;
 use crate::resolve::{resolve_page_id, resolve_space_key};
@@ -115,6 +116,25 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
             })
             .collect();
 
+        let mut reserved_paths: HashSet<PathBuf> = HashSet::new();
+        let mut planned_downloads = Vec::with_capacity(selected.len());
+        for item in selected {
+            let title = item
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let target_name = sanitize_filename(&title);
+            if target_name.is_empty() {
+                return Err(anyhow!("Unsafe attachment title: {title}"));
+            }
+
+            let target_path =
+                reserve_unique_path(attachments_dir.join(target_name), &reserved_paths);
+            reserved_paths.insert(target_path.clone());
+            planned_downloads.push((item, title, target_path));
+        }
+
         let sem = Arc::new(Semaphore::new(args.concurrency.max(1)));
         let client = Arc::new(client.clone());
         let origin = Url::parse(client.base_url())?;
@@ -123,7 +143,7 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
         let total_bar = if ctx.quiet {
             None
         } else {
-            let bar = indicatif::ProgressBar::new(selected.len() as u64);
+            let bar = indicatif::ProgressBar::new(planned_downloads.len() as u64);
             bar.set_style(
                 indicatif::ProgressStyle::with_template("{spinner:.green} {pos}/{len} {wide_msg}")
                     .unwrap(),
@@ -135,11 +155,10 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
         let verbose = ctx.verbose;
         let mut tasks = JoinSet::new();
 
-        for item in selected {
+        for (item, title, target_path) in planned_downloads {
             let permit = sem.clone().acquire_owned().await?;
             let client = client.clone();
             let origin = origin.clone();
-            let attachments_dir = attachments_dir.clone();
             let bar = total_bar.clone();
 
             tasks.spawn(async move {
@@ -147,8 +166,9 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
                 let path = download_attachment_item(
                     &client,
                     &origin,
-                    &attachments_dir,
                     &item,
+                    &title,
+                    &target_path,
                     verbose,
                     quiet,
                 )
@@ -215,12 +235,12 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
 async fn download_attachment_item(
     client: &ApiClient,
     origin: &Url,
-    attachments_dir: &std::path::Path,
     item: &serde_json::Value,
+    title: &str,
+    target_path: &Path,
     verbose: u8,
     quiet: bool,
 ) -> Result<PathBuf> {
-    let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
     let download = item
         .get("downloadLink")
         .and_then(|v| v.as_str())
@@ -231,12 +251,6 @@ async fn download_attachment_item(
         })
         .context("Missing attachment download link")?;
 
-    let target_name = sanitize_filename(title);
-    if target_name.is_empty() {
-        return Err(anyhow::anyhow!("Unsafe attachment title: {title}"));
-    }
-    let target_path = unique_path(attachments_dir.join(target_name));
-
     let url = attachment_download_url(origin, download)?;
     let opts = DownloadToFileOptions {
         retry: DownloadRetry::default(),
@@ -244,7 +258,58 @@ async fn download_attachment_item(
         verbose,
         quiet,
     };
-    download_to_file_with_retry(client, url, &target_path, title, opts).await?;
+    download_to_file_with_retry(client, url, target_path, title, opts).await?;
 
-    Ok(target_path)
+    Ok(target_path.to_path_buf())
+}
+
+fn reserve_unique_path(path: PathBuf, reserved: &HashSet<PathBuf>) -> PathBuf {
+    if !path.exists() && !reserved.contains(&path) {
+        return path;
+    }
+
+    let parent = path.parent().map(Path::to_path_buf).unwrap_or_default();
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file")
+        .to_string();
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_string();
+
+    for i in 1..10_000 {
+        let name = if ext.is_empty() {
+            format!("{stem} ({i})")
+        } else {
+            format!("{stem} ({i}).{ext}")
+        };
+        let candidate = parent.join(name);
+        if !candidate.exists() && !reserved.contains(&candidate) {
+            return candidate;
+        }
+    }
+
+    path
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reserve_unique_path_avoids_pre_reserved_collisions() {
+        let base = std::env::temp_dir().join("confcli-export-tests");
+        let mut reserved = HashSet::new();
+
+        let first = reserve_unique_path(base.join("artifact.txt"), &reserved);
+        reserved.insert(first.clone());
+
+        let second = reserve_unique_path(base.join("artifact.txt"), &reserved);
+
+        assert_ne!(first, second);
+        assert!(second.ends_with("artifact (1).txt"));
+    }
 }
