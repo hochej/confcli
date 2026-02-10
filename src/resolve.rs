@@ -25,7 +25,14 @@ fn space_key_cache() -> &'static Mutex<LruCache<String, String>> {
 }
 
 pub async fn resolve_page_id(client: &ApiClient, page: &str) -> Result<String> {
-    if !page.is_empty() && page.chars().all(|c| c.is_ascii_digit()) {
+    let page = page.trim();
+    if page.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Page reference cannot be empty. Use a page id, URL, or SPACE:Title."
+        ));
+    }
+
+    if page.chars().all(|c| c.is_ascii_digit()) {
         return Ok(page.to_string());
     }
     if let Ok(url) = Url::parse(page)
@@ -34,6 +41,14 @@ pub async fn resolve_page_id(client: &ApiClient, page: &str) -> Result<String> {
         return Ok(id);
     }
     if let Some((space, title)) = page.split_once(':') {
+        let space = space.trim();
+        let title = title.trim();
+        if space.is_empty() || title.is_empty() {
+            return Err(anyhow::anyhow!(
+                "Invalid page reference '{page}'. Use SPACE:Title with both parts non-empty."
+            ));
+        }
+
         let space_id = resolve_space_id(client, space).await?;
         let url = url_with_query(
             &client.v2_url("/pages"),
@@ -57,7 +72,12 @@ pub async fn resolve_page_id(client: &ApiClient, page: &str) -> Result<String> {
 }
 
 pub async fn resolve_space_id(client: &ApiClient, space: &str) -> Result<String> {
-    if !space.is_empty() && space.chars().all(|c| c.is_ascii_digit()) {
+    let space = space.trim();
+    if space.is_empty() {
+        return Err(anyhow::anyhow!("Space reference cannot be empty"));
+    }
+
+    if space.chars().all(|c| c.is_ascii_digit()) {
         return Ok(space.to_string());
     }
 
@@ -178,9 +198,17 @@ pub fn extract_page_id_from_url(url: &Url) -> Option<String> {
         }
     }
 
-    url.query_pairs()
-        .find(|(key, _)| key == "pageId")
-        .map(|(_, value)| value.to_string())
+    url.query_pairs().find_map(|(key, value)| {
+        if key != "pageId" {
+            return None;
+        }
+        let id = value.to_string();
+        if !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) {
+            Some(id)
+        } else {
+            None
+        }
+    })
 }
 
 #[cfg(feature = "write")]
@@ -274,4 +302,58 @@ pub fn build_page_tree(items: &[Value]) -> Vec<String> {
     }
 
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use confcli::auth::AuthMethod;
+
+    fn test_client() -> ApiClient {
+        ApiClient::new(
+            "https://example.atlassian.net/wiki".to_string(),
+            "https://example.atlassian.net/wiki/rest/api".to_string(),
+            "https://example.atlassian.net/wiki/api/v2".to_string(),
+            AuthMethod::Bearer {
+                token: "test-token".to_string(),
+            },
+            0,
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn resolve_page_id_rejects_empty_space_or_title_parts() {
+        let client = test_client();
+
+        let err = resolve_page_id(&client, ":").await.unwrap_err();
+        assert!(format!("{err:#}").contains("SPACE:Title"));
+
+        let err = resolve_page_id(&client, "SPACE:").await.unwrap_err();
+        assert!(format!("{err:#}").contains("SPACE:Title"));
+
+        let err = resolve_page_id(&client, ":Title").await.unwrap_err();
+        assert!(format!("{err:#}").contains("SPACE:Title"));
+    }
+
+    #[tokio::test]
+    async fn resolve_space_id_rejects_empty_input() {
+        let client = test_client();
+
+        let err = resolve_space_id(&client, "  ").await.unwrap_err();
+        assert!(format!("{err:#}").contains("cannot be empty"));
+    }
+
+    #[test]
+    fn extract_page_id_from_query_requires_numeric_page_id() {
+        let valid =
+            Url::parse("https://example.atlassian.net/wiki/pages/viewpage.action?pageId=123")
+                .unwrap();
+        assert_eq!(extract_page_id_from_url(&valid), Some("123".to_string()));
+
+        let invalid =
+            Url::parse("https://example.atlassian.net/wiki/pages/viewpage.action?pageId=abc")
+                .unwrap();
+        assert_eq!(extract_page_id_from_url(&invalid), None);
+    }
 }
