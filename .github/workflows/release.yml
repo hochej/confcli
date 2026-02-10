@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   verify:
@@ -120,6 +121,19 @@ jobs:
         with:
           path: artifacts
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign release artifacts (keyless)
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            cosign sign-blob --yes \
+              --output-signature "${file}.sig" \
+              --output-certificate "${file}.pem" \
+              "$file"
+          done < <(find artifacts -type f -name '*.tar.gz' -print0)
+
       - name: Extract changelog section
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
@@ -134,5 +148,7 @@ jobs:
           files: |
             artifacts/**/*.tar.gz
             artifacts/**/*.sha256
+            artifacts/**/*.tar.gz.sig
+            artifacts/**/*.tar.gz.pem
           body_path: RELEASE_NOTES.md
           generate_release_notes: false

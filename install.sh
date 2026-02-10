@@ -204,6 +204,30 @@ main() {
     [ "$EXPECTED" != "$ACTUAL" ] && err "Checksum mismatch for ${ASSET}.\n         Expected: ${EXPECTED}\n         Actual:   ${ACTUAL}"
     ok "Checksum OK"
 
+    # Optional provenance verification (requires cosign).
+    SIG_URL="${URL}.sig"
+    CERT_URL="${URL}.pem"
+    HTTP_CODE_SIG=$(curl -sSL -w '%{http_code}' -o "${TMPDIR_DL}/${ASSET}.sig" "$SIG_URL" 2>/dev/null || printf '000')
+    HTTP_CODE_CERT=$(curl -sSL -w '%{http_code}' -o "${TMPDIR_DL}/${ASSET}.pem" "$CERT_URL" 2>/dev/null || printf '000')
+
+    if [ "$HTTP_CODE_SIG" = "200" ] && [ "$HTTP_CODE_CERT" = "200" ]; then
+        if command -v cosign >/dev/null 2>&1; then
+            info "Verifying Sigstore signature…"
+            cosign verify-blob \
+                --certificate "${TMPDIR_DL}/${ASSET}.pem" \
+                --signature "${TMPDIR_DL}/${ASSET}.sig" \
+                --certificate-identity-regexp "https://github.com/${REPO}/.github/workflows/release.yml@refs/tags/v.*" \
+                --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+                "${TMPDIR_DL}/${ASSET}" >/dev/null 2>&1 \
+                || err "Sigstore verification failed for ${ASSET}."
+            ok "Sigstore signature OK"
+        else
+            info "cosign not found; skipping signature verification (install cosign to enable)."
+        fi
+    else
+        info "No signature artifacts found for ${ASSET}; skipping signature verification."
+    fi
+
     # Extract (defensive: ensure the archive contains only the expected binary)
     info "Extracting…"
     ENTRIES=$(tar -tzf "${TMPDIR_DL}/${ASSET}" 2>/dev/null || true)
