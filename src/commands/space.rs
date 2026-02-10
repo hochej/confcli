@@ -213,8 +213,13 @@ async fn space_create(client: &ApiClient, ctx: &AppContext, args: SpaceCreateArg
 
 #[cfg(feature = "write")]
 async fn space_delete(client: &ApiClient, ctx: &AppContext, args: SpaceDeleteArgs) -> Result<()> {
-    let space_id = resolve_space_id(client, &args.space).await?;
-    let space_key = resolve_space_key(client, &space_id).await?;
+    let requested_space = args.space.trim();
+    let space_id = resolve_space_id(client, requested_space).await?;
+    let space_key = if requested_space.chars().all(|c| c.is_ascii_digit()) {
+        resolve_space_key(client, &space_id).await?
+    } else {
+        requested_space.to_string()
+    };
 
     if ctx.dry_run {
         if let Some(fmt) = args.output {
