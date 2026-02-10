@@ -52,7 +52,7 @@ pub fn resolve_download_path(output: &Option<PathBuf>, json: &Value) -> Result<P
         .unwrap_or("");
     if file_name.is_empty() {
         return Err(anyhow::anyhow!(
-            "Unsafe or missing attachment title. Provide --output to choose a file path."
+            "Unsafe or missing attachment title. Provide --dest to choose a file path."
         ));
     }
     Ok(PathBuf::from(file_name))
