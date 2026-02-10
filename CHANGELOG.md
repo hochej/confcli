@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-02-10
+
+### Changed
+
+- **Refactor: page command module split** — moved `src/commands/page.rs` into `src/commands/page/{mod.rs,listing.rs,navigation.rs,write_ops.rs}` with a thin dispatcher and feature-gated write ops.
+- **Refactor: CLI definitions split by domain** — moved `src/cli.rs` into `src/cli/` modules (`auth`, `space`, `page`, `search`, `attachment`, `label`, `comment`, `export`, `copy_tree`, and shared `common` validators).
+- **Documentation layout update** — `AGENTS.md` code-layout table now reflects module-directory structure for `src/cli/` and `src/commands/`.
+
 ## [0.2.5] - 2026-02-06
 
 ### Added
