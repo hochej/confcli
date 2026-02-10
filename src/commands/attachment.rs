@@ -1,3 +1,5 @@
+#[cfg(feature = "write")]
+use anyhow::anyhow;
 use anyhow::{Context, Result};
 use confcli::client::ApiClient;
 use confcli::json_util::json_str;
@@ -7,6 +9,12 @@ use dialoguer::Confirm;
 use indicatif::{ProgressBar, ProgressStyle};
 #[cfg(feature = "write")]
 use serde_json::json;
+#[cfg(feature = "write")]
+use std::sync::Arc;
+#[cfg(feature = "write")]
+use tokio::sync::Semaphore;
+#[cfg(feature = "write")]
+use tokio::task::JoinSet;
 use url::Url;
 
 use crate::cli::*;
@@ -160,7 +168,7 @@ async fn attachment_upload(
         return Ok(());
     }
 
-    let mut all_attachments = Vec::new();
+    let mut approved_files = Vec::new();
     for file in &args.files {
         let metadata = tokio::fs::metadata(file).await?;
         let size = metadata.len();
@@ -178,32 +186,70 @@ async fn attachment_upload(
                 continue;
             }
         }
+        approved_files.push(file.clone());
+    }
 
-        let result = client
-            .upload_attachment(&page_id, file, args.comment.clone())
-            .await?;
-        let attachment = result
-            .get("results")
-            .and_then(|v| v.as_array())
-            .and_then(|items| items.first())
-            .cloned()
-            .unwrap_or(result);
-        match args.output {
-            OutputFormat::Json => {}
-            _ => {
+    if approved_files.is_empty() {
+        return Ok(());
+    }
+
+    let comment = args.comment.clone();
+    let sem = Arc::new(Semaphore::new(args.concurrency.max(1)));
+    let client = Arc::new(client.clone());
+    let mut tasks = JoinSet::new();
+
+    for (idx, file) in approved_files.into_iter().enumerate() {
+        let permit = sem.clone().acquire_owned().await?;
+        let client = client.clone();
+        let page_id = page_id.clone();
+        let comment = comment.clone();
+
+        tasks.spawn(async move {
+            let _permit = permit;
+            let result = client.upload_attachment(&page_id, &file, comment).await?;
+            let attachment = result
+                .get("results")
+                .and_then(|v| v.as_array())
+                .and_then(|items| items.first())
+                .cloned()
+                .unwrap_or(result);
+            Ok::<_, anyhow::Error>((idx, attachment))
+        });
+    }
+
+    let mut ordered_results = Vec::new();
+    while let Some(res) = tasks.join_next().await {
+        match res {
+            Ok(Ok((idx, attachment))) => ordered_results.push((idx, attachment)),
+            Ok(Err(err)) => {
+                tasks.abort_all();
+                while tasks.join_next().await.is_some() {}
+                return Err(err.context("Attachment upload failed"));
+            }
+            Err(join_err) => {
+                tasks.abort_all();
+                while tasks.join_next().await.is_some() {}
+                return Err(anyhow!("Attachment upload task failed: {join_err}"));
+            }
+        }
+    }
+
+    ordered_results.sort_by_key(|(idx, _)| *idx);
+    let all_attachments: Vec<_> = ordered_results.into_iter().map(|(_, a)| a).collect();
+
+    match args.output {
+        OutputFormat::Json => maybe_print_json(ctx, &all_attachments)?,
+        _ => {
+            for attachment in &all_attachments {
                 let rows = vec![
-                    vec!["ID".to_string(), json_str(&attachment, "id")],
-                    vec!["Title".to_string(), json_str(&attachment, "title")],
+                    vec!["ID".to_string(), json_str(attachment, "id")],
+                    vec!["Title".to_string(), json_str(attachment, "title")],
                 ];
                 maybe_print_kv(ctx, rows);
             }
         }
-        all_attachments.push(attachment);
     }
 
-    if matches!(args.output, OutputFormat::Json) {
-        maybe_print_json(ctx, &all_attachments)?;
-    }
     Ok(())
 }
 

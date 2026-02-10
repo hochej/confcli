@@ -569,6 +569,13 @@ pub struct AttachmentUploadArgs {
     pub files: Vec<PathBuf>,
     #[arg(long, help = "Optional attachment comment")]
     pub comment: Option<String>,
+    #[arg(
+        long,
+        default_value = "4",
+        value_parser = parse_positive_limit,
+        help = "Max concurrent uploads"
+    )]
+    pub concurrency: usize,
     #[arg(short = 'o', long, default_value_t = OutputFormat::Table, help = "Output format: json, table, or markdown")]
     pub output: OutputFormat,
 }
