@@ -27,9 +27,9 @@ The pre-commit hook and CI workflow **must always stay in sync**. If you add, re
 
 | Path | Purpose |
 |---|---|
-| `src/cli.rs` | Clap argument definitions (all command/arg structs) |
+| `src/cli/` | Clap argument definitions (all command/arg structs), split by command domain |
 | `src/main.rs` | Entry point, dispatches to command handlers |
-| `src/commands/` | One file per top-level command (space, page, search, …) |
+| `src/commands/` | One module per top-level command (space, page, search, …); modules may be a single file or a directory |
 | `src/client.rs` | HTTP client — auth, retries, `v1_url()` / `v2_url()` helpers |
 | `src/resolve.rs` | Resolves `SPACE:Title` / space keys / URLs to numeric IDs |
 | `src/download.rs` | Attachment download with retries and progress bars |
