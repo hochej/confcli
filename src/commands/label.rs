@@ -2,6 +2,8 @@ use anyhow::Result;
 use confcli::client::ApiClient;
 use confcli::json_util::json_str;
 use confcli::output::OutputFormat;
+#[cfg(feature = "write")]
+use futures_util::stream::{self, StreamExt};
 use serde_json::Value;
 #[cfg(feature = "write")]
 use serde_json::json;
@@ -110,6 +112,8 @@ async fn label_add(client: &ApiClient, ctx: &AppContext, args: LabelAddArgs) -> 
 
 #[cfg(feature = "write")]
 async fn label_remove(client: &ApiClient, ctx: &AppContext, args: LabelRemoveArgs) -> Result<()> {
+    const REMOVE_CONCURRENCY: usize = 4;
+
     let page_id = resolve_page_id(client, &args.page).await?;
 
     if ctx.dry_run {
@@ -121,13 +125,38 @@ async fn label_remove(client: &ApiClient, ctx: &AppContext, args: LabelRemoveArg
         return Ok(());
     }
 
-    for label in &args.labels {
-        let url = client.v1_url(&format!(
-            "/content/{page_id}/label?name={}&prefix=global",
-            urlencoding::encode(label)
-        ));
-        client.delete(url).await?;
+    let client = client.clone();
+    let page_id = page_id.clone();
+    let mut stream = stream::iter(args.labels.iter().cloned())
+        .map(|label| {
+            let client = client.clone();
+            let page_id = page_id.clone();
+            async move {
+                let url = client.v1_url(&format!(
+                    "/content/{page_id}/label?name={}&prefix=global",
+                    urlencoding::encode(&label)
+                ));
+                let res = client.delete(url).await;
+                (label, res)
+            }
+        })
+        .buffer_unordered(REMOVE_CONCURRENCY);
+
+    let mut failures: Vec<String> = Vec::new();
+    while let Some((label, result)) = stream.next().await {
+        if let Err(err) = result {
+            failures.push(format!("{label}: {err:#}"));
+        }
     }
+
+    if !failures.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Failed to remove {} label(s): {}",
+            failures.len(),
+            failures.join("; ")
+        ));
+    }
+
     let noun = if args.labels.len() == 1 {
         "label"
     } else {
