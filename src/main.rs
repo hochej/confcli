@@ -9,6 +9,8 @@ mod context;
 mod download;
 mod helpers;
 mod resolve;
+#[cfg(test)]
+mod test_support;
 
 use cli::{Cli, Commands, Shell};
 use context::AppContext;

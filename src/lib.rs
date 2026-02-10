@@ -7,3 +7,6 @@ pub mod output;
 pub mod pagination;
 pub mod pattern;
 pub mod tree;
+
+#[cfg(test)]
+pub mod test_support;
