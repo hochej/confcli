@@ -120,6 +120,10 @@ fn to_cql_query(query: &str) -> String {
 /// Under concurrent modifications, results may be duplicated or skipped as
 /// content shifts between pages. There is no cursor-based alternative in v1.
 async fn search_all(client: &ApiClient, cql: &str, limit: usize) -> Result<Vec<Value>> {
+    if limit == 0 {
+        return Err(anyhow::anyhow!("--limit must be at least 1"));
+    }
+
     let mut start = 0usize;
     let mut results = Vec::new();
     loop {

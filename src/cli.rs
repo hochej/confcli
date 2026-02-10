@@ -48,6 +48,17 @@ fn parse_space_key(s: &str) -> Result<String, String> {
     Ok(s.to_string())
 }
 
+fn parse_positive_limit(s: &str) -> Result<usize, String> {
+    let value = s
+        .trim()
+        .parse::<usize>()
+        .map_err(|_| "limit must be a positive integer".to_string())?;
+    if value == 0 {
+        return Err("limit must be at least 1".to_string());
+    }
+    Ok(value)
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "confcli",
@@ -188,6 +199,7 @@ pub struct SpaceListArgs {
         short = 'n',
         long,
         default_value = "50",
+        value_parser = parse_positive_limit,
         help = "Maximum number of results"
     )]
     pub limit: usize,
@@ -221,6 +233,7 @@ pub struct SpacePagesArgs {
         short = 'n',
         long,
         default_value = "50",
+        value_parser = parse_positive_limit,
         help = "Maximum number of results"
     )]
     pub limit: usize,
@@ -301,6 +314,7 @@ pub struct PageListArgs {
         short = 'n',
         long,
         default_value = "50",
+        value_parser = parse_positive_limit,
         help = "Maximum number of results"
     )]
     pub limit: usize,
@@ -440,6 +454,7 @@ pub struct PageChildrenArgs {
         short = 'n',
         long,
         default_value = "50",
+        value_parser = parse_positive_limit,
         help = "Maximum number of results"
     )]
     pub limit: usize,
@@ -455,6 +470,7 @@ pub struct PageHistoryArgs {
         short = 'n',
         long,
         default_value = "25",
+        value_parser = parse_positive_limit,
         help = "Number of versions to show"
     )]
     pub limit: usize,
@@ -486,6 +502,7 @@ pub struct SearchCommand {
         short = 'n',
         long,
         default_value = "50",
+        value_parser = parse_positive_limit,
         help = "Maximum number of results"
     )]
     pub limit: usize,
@@ -521,6 +538,7 @@ pub struct AttachmentListArgs {
         short = 'n',
         long,
         default_value = "50",
+        value_parser = parse_positive_limit,
         help = "Maximum number of results"
     )]
     pub limit: usize,
@@ -596,6 +614,7 @@ pub struct LabelListArgs {
         short = 'n',
         long,
         default_value = "50",
+        value_parser = parse_positive_limit,
         help = "Maximum number of results"
     )]
     pub limit: usize,
@@ -631,6 +650,7 @@ pub struct LabelPagesArgs {
         short = 'n',
         long,
         default_value = "50",
+        value_parser = parse_positive_limit,
         help = "Maximum number of results"
     )]
     pub limit: usize,
@@ -672,6 +692,7 @@ pub struct CommentListArgs {
         short = 'n',
         long,
         default_value = "25",
+        value_parser = parse_positive_limit,
         help = "Maximum number of results"
     )]
     pub limit: usize,

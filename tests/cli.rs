@@ -257,6 +257,15 @@ fn search_whitespace_query_rejected() {
 }
 
 #[test]
+fn limit_zero_rejected_at_cli_parse_time() {
+    confcli()
+        .args(["search", "docs", "--limit", "0"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("limit must be at least 1"));
+}
+
+#[test]
 #[cfg(feature = "write")]
 fn label_add_accepts_multiple() {
     confcli()
