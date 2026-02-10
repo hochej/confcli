@@ -8,10 +8,6 @@ pub enum AuthMethod {
 }
 
 impl AuthMethod {
-    pub fn is_basic(&self) -> bool {
-        matches!(self, AuthMethod::Basic { .. })
-    }
-
     pub fn description(&self) -> &'static str {
         match self {
             AuthMethod::Basic { .. } => "basic",
