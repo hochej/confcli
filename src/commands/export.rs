@@ -1,13 +1,13 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use confcli::client::ApiClient;
 use confcli::json_util::json_str;
 use confcli::markdown::{MarkdownOptions, html_to_markdown_with_options};
 use confcli::output::OutputFormat;
-use futures_util::{StreamExt, stream::FuturesUnordered};
 use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 use url::Url;
 
 use crate::cli::ExportArgs;
@@ -133,7 +133,7 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
         };
 
         let verbose = ctx.verbose;
-        let mut tasks: FuturesUnordered<_> = FuturesUnordered::new();
+        let mut tasks = JoinSet::new();
 
         for item in selected {
             let permit = sem.clone().acquire_owned().await?;
@@ -142,7 +142,7 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
             let attachments_dir = attachments_dir.clone();
             let bar = total_bar.clone();
 
-            tasks.push(tokio::spawn(async move {
+            tasks.spawn(async move {
                 let _permit = permit;
                 let path = download_attachment_item(
                     &client,
@@ -157,12 +157,29 @@ async fn export_page(client: &ApiClient, ctx: &AppContext, args: ExportArgs) -> 
                     bar.inc(1);
                 }
                 Ok::<_, anyhow::Error>(path)
-            }));
+            });
         }
 
-        while let Some(res) = tasks.next().await {
-            let path = res.context("Attachment download task failed")??;
-            attachments_written.push(path);
+        while let Some(res) = tasks.join_next().await {
+            match res {
+                Ok(Ok(path)) => attachments_written.push(path),
+                Ok(Err(err)) => {
+                    tasks.abort_all();
+                    while tasks.join_next().await.is_some() {}
+                    if let Some(bar) = &total_bar {
+                        bar.finish_and_clear();
+                    }
+                    return Err(err.context("Attachment download task failed"));
+                }
+                Err(join_err) => {
+                    tasks.abort_all();
+                    while tasks.join_next().await.is_some() {}
+                    if let Some(bar) = &total_bar {
+                        bar.finish_and_clear();
+                    }
+                    return Err(anyhow!("Attachment download task failed: {join_err}"));
+                }
+            }
         }
 
         if let Some(bar) = total_bar {

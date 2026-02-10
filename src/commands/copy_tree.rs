@@ -1,14 +1,14 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use confcli::client::ApiClient;
 use confcli::json_util::json_str;
 use confcli::output::OutputFormat;
-use futures_util::{StreamExt, stream::FuturesUnordered};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
 use crate::cli::CopyTreeArgs;
 use crate::context::AppContext;
@@ -184,7 +184,7 @@ async fn copy_tree(client: &ApiClient, ctx: &AppContext, args: CopyTreeArgs) -> 
         bar.set_message("page bodies");
         Some(bar)
     };
-    let mut tasks: FuturesUnordered<_> = FuturesUnordered::new();
+    let mut tasks = JoinSet::new();
     for (id, node) in nodes.iter() {
         if id == &source_id {
             continue;
@@ -199,7 +199,7 @@ async fn copy_tree(client: &ApiClient, ctx: &AppContext, args: CopyTreeArgs) -> 
         let client = client_arc.clone();
         let permit = sem.clone().acquire_owned().await?;
         let bar = fetch_bar.clone();
-        tasks.push(tokio::spawn(async move {
+        tasks.spawn(async move {
             let _permit = permit;
             let res = fetch_page_with_body_format(&client, &id, "storage")
                 .await
@@ -210,13 +210,32 @@ async fn copy_tree(client: &ApiClient, ctx: &AppContext, args: CopyTreeArgs) -> 
                 bar.inc(1);
             }
             res
-        }));
+        });
     }
 
-    while let Some(res) = tasks.next().await {
-        let (id, body) = res.context("Fetch task failed")??;
-        if let Some(node) = nodes.get_mut(&id) {
-            node.body_storage = Some(body);
+    while let Some(res) = tasks.join_next().await {
+        match res {
+            Ok(Ok((id, body))) => {
+                if let Some(node) = nodes.get_mut(&id) {
+                    node.body_storage = Some(body);
+                }
+            }
+            Ok(Err(err)) => {
+                tasks.abort_all();
+                while tasks.join_next().await.is_some() {}
+                if let Some(bar) = &fetch_bar {
+                    bar.finish_and_clear();
+                }
+                return Err(err.context("Fetch task failed"));
+            }
+            Err(join_err) => {
+                tasks.abort_all();
+                while tasks.join_next().await.is_some() {}
+                if let Some(bar) = &fetch_bar {
+                    bar.finish_and_clear();
+                }
+                return Err(anyhow!("Fetch task failed: {join_err}"));
+            }
         }
     }
     if let Some(bar) = fetch_bar {
