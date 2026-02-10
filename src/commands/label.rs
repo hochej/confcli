@@ -143,15 +143,10 @@ async fn label_pages(client: &ApiClient, ctx: &AppContext, args: LabelPagesArgs)
         &client.v1_url("/search"),
         &[("cql", cql), ("limit", args.limit.to_string())],
     )?;
-    let (json, _) = client.get_json(url).await?;
+    let results = client.get_paginated_results(url, args.all).await?;
     match args.output {
-        OutputFormat::Json => maybe_print_json(ctx, &json),
+        OutputFormat::Json => maybe_print_json(ctx, &results),
         fmt => {
-            let results = json
-                .get("results")
-                .and_then(|v| v.as_array())
-                .cloned()
-                .unwrap_or_default();
             let rows = results.iter().map(label_result_row).collect();
             maybe_print_rows(ctx, fmt, &["ID", "Type", "Title"], rows);
             Ok(())
