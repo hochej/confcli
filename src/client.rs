@@ -15,6 +15,7 @@ use tokio_util::io::ReaderStream;
 use url::Url;
 
 const MAX_ATTEMPTS: u32 = 3;
+const API_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const USER_AGENT: &str = concat!("confcli/", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug, Clone)]
@@ -47,7 +48,6 @@ impl ApiClient {
         let http = HttpClient::builder()
             .user_agent(USER_AGENT)
             .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(60))
             .build()?;
         Ok(Self {
             site_url,
@@ -121,7 +121,10 @@ impl ApiClient {
             }
 
             let start = std::time::Instant::now();
-            let builder = self.http.request(method.clone(), url.clone());
+            let builder = self
+                .http
+                .request(method.clone(), url.clone())
+                .timeout(API_REQUEST_TIMEOUT);
             let builder = configure(builder);
             let builder = self.apply_auth(builder)?;
 
