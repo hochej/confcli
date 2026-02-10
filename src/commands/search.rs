@@ -124,9 +124,18 @@ async fn search_all(client: &ApiClient, cql: &str, limit: usize) -> Result<Vec<V
         return Err(anyhow::anyhow!("--limit must be at least 1"));
     }
 
+    const MAX_PAGES: usize = 10_000;
+
     let mut start = 0usize;
+    let mut pages = 0usize;
     let mut results = Vec::new();
     loop {
+        pages += 1;
+        if pages > MAX_PAGES {
+            return Err(anyhow::anyhow!(
+                "Search pagination aborted after {MAX_PAGES} pages (possible looping server response)"
+            ));
+        }
         let url = url_with_query(
             &client.v1_url("/search"),
             &[
