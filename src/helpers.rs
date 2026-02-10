@@ -27,6 +27,28 @@ pub fn maybe_print_kv(ctx: &AppContext, rows: Vec<Vec<String>>) {
     print_kv(rows);
 }
 
+#[cfg(feature = "write")]
+pub fn print_write_action_result(
+    ctx: &AppContext,
+    output: Option<OutputFormat>,
+    default_message: &str,
+    json_value: &Value,
+    kv_rows: Vec<Vec<String>>,
+) -> Result<()> {
+    if let Some(fmt) = output {
+        match fmt {
+            OutputFormat::Json => maybe_print_json(ctx, json_value),
+            other => {
+                maybe_print_kv_fmt(ctx, other, kv_rows);
+                Ok(())
+            }
+        }
+    } else {
+        print_line(ctx, default_message);
+        Ok(())
+    }
+}
+
 pub fn print_line(ctx: &AppContext, message: &str) {
     if ctx.quiet {
         return;

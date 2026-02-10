@@ -12,6 +12,8 @@ use crate::cli::{SpaceCommand, SpaceGetArgs, SpaceListArgs, SpacePagesArgs};
 use crate::cli::{SpaceCreateArgs, SpaceDeleteArgs};
 use crate::context::AppContext;
 use crate::helpers::print_line;
+#[cfg(feature = "write")]
+use crate::helpers::print_write_action_result;
 use crate::helpers::{maybe_print_json, maybe_print_kv_fmt, maybe_print_rows, url_with_query};
 #[cfg(feature = "write")]
 use crate::resolve::resolve_space_key;
@@ -222,37 +224,23 @@ async fn space_delete(client: &ApiClient, ctx: &AppContext, args: SpaceDeleteArg
     };
 
     if ctx.dry_run {
-        if let Some(fmt) = args.output {
-            match fmt {
-                OutputFormat::Json => {
-                    return maybe_print_json(
-                        ctx,
-                        &json!({
-                            "dryRun": true,
-                            "deleted": false,
-                            "id": space_id,
-                            "key": space_key,
-                        }),
-                    );
-                }
-                other => {
-                    maybe_print_kv_fmt(
-                        ctx,
-                        other,
-                        vec![
-                            vec!["DryRun".to_string(), "true".to_string()],
-                            vec!["Deleted".to_string(), "false".to_string()],
-                            vec!["ID".to_string(), space_id],
-                            vec!["Key".to_string(), space_key],
-                        ],
-                    );
-                    return Ok(());
-                }
-            }
-        }
-
-        print_line(ctx, &format!("Would delete space {space_key}"));
-        return Ok(());
+        return print_write_action_result(
+            ctx,
+            args.output,
+            &format!("Would delete space {space_key}"),
+            &json!({
+                "dryRun": true,
+                "deleted": false,
+                "id": space_id,
+                "key": space_key,
+            }),
+            vec![
+                vec!["DryRun".to_string(), "true".to_string()],
+                vec!["Deleted".to_string(), "false".to_string()],
+                vec!["ID".to_string(), space_id.clone()],
+                vec!["Key".to_string(), space_key.clone()],
+            ],
+        );
     }
 
     if !args.yes {
@@ -275,31 +263,19 @@ async fn space_delete(client: &ApiClient, ctx: &AppContext, args: SpaceDeleteArg
     let url = client.v1_url(&format!("/space/{space_key}"));
     client.delete(url).await?;
 
-    if let Some(fmt) = args.output {
-        match fmt {
-            OutputFormat::Json => maybe_print_json(
-                ctx,
-                &json!({
-                    "deleted": true,
-                    "id": space_id,
-                    "key": space_key,
-                }),
-            ),
-            other => {
-                maybe_print_kv_fmt(
-                    ctx,
-                    other,
-                    vec![
-                        vec!["Deleted".to_string(), "true".to_string()],
-                        vec!["ID".to_string(), space_id],
-                        vec!["Key".to_string(), space_key],
-                    ],
-                );
-                Ok(())
-            }
-        }
-    } else {
-        print_line(ctx, &format!("Deleted space {space_key}"));
-        Ok(())
-    }
+    print_write_action_result(
+        ctx,
+        args.output,
+        &format!("Deleted space {space_key}"),
+        &json!({
+            "deleted": true,
+            "id": space_id,
+            "key": space_key,
+        }),
+        vec![
+            vec!["Deleted".to_string(), "true".to_string()],
+            vec!["ID".to_string(), space_id],
+            vec!["Key".to_string(), space_key],
+        ],
+    )
 }

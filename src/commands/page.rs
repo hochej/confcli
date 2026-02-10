@@ -616,37 +616,23 @@ async fn page_delete(client: &ApiClient, ctx: &AppContext, args: PageDeleteArgs)
     let action = if args.purge { "purge" } else { "delete" };
 
     if ctx.dry_run {
-        if let Some(fmt) = args.output {
-            match fmt {
-                OutputFormat::Json => {
-                    return maybe_print_json(
-                        ctx,
-                        &json!({
-                            "dryRun": true,
-                            "action": action,
-                            "deleted": false,
-                            "id": page_id,
-                        }),
-                    );
-                }
-                other => {
-                    maybe_print_kv_fmt(
-                        ctx,
-                        other,
-                        vec![
-                            vec!["DryRun".to_string(), "true".to_string()],
-                            vec!["Action".to_string(), action.to_string()],
-                            vec!["Deleted".to_string(), "false".to_string()],
-                            vec!["ID".to_string(), page_id],
-                        ],
-                    );
-                    return Ok(());
-                }
-            }
-        }
-
-        print_line(ctx, &format!("Would {action} page {page_id}"));
-        return Ok(());
+        return print_write_action_result(
+            ctx,
+            args.output,
+            &format!("Would {action} page {page_id}"),
+            &json!({
+                "dryRun": true,
+                "action": action,
+                "deleted": false,
+                "id": page_id,
+            }),
+            vec![
+                vec!["DryRun".to_string(), "true".to_string()],
+                vec!["Action".to_string(), action.to_string()],
+                vec!["Deleted".to_string(), "false".to_string()],
+                vec!["ID".to_string(), page_id.clone()],
+            ],
+        );
     }
 
     if !args.yes {
@@ -682,34 +668,22 @@ async fn page_delete(client: &ApiClient, ctx: &AppContext, args: PageDeleteArgs)
         client.delete(url).await?;
     }
 
-    if let Some(fmt) = args.output {
-        match fmt {
-            OutputFormat::Json => maybe_print_json(
-                ctx,
-                &json!({
-                    "action": action,
-                    "deleted": true,
-                    "id": page_id,
-                }),
-            ),
-            other => {
-                maybe_print_kv_fmt(
-                    ctx,
-                    other,
-                    vec![
-                        vec!["Action".to_string(), action.to_string()],
-                        vec!["Deleted".to_string(), "true".to_string()],
-                        vec!["ID".to_string(), page_id],
-                    ],
-                );
-                Ok(())
-            }
-        }
-    } else {
-        let past = if args.purge { "Purged" } else { "Deleted" };
-        print_line(ctx, &format!("{past} page {page_id}"));
-        Ok(())
-    }
+    let past = if args.purge { "Purged" } else { "Deleted" };
+    print_write_action_result(
+        ctx,
+        args.output,
+        &format!("{past} page {page_id}"),
+        &json!({
+            "action": action,
+            "deleted": true,
+            "id": page_id,
+        }),
+        vec![
+            vec!["Action".to_string(), action.to_string()],
+            vec!["Deleted".to_string(), "true".to_string()],
+            vec!["ID".to_string(), page_id],
+        ],
+    )
 }
 
 async fn page_children(client: &ApiClient, ctx: &AppContext, args: PageChildrenArgs) -> Result<()> {

@@ -262,40 +262,23 @@ async fn attachment_delete(
     let action = if args.purge { "purge" } else { "delete" };
 
     if ctx.dry_run {
-        if let Some(fmt) = args.output {
-            match fmt {
-                OutputFormat::Json => {
-                    return maybe_print_json(
-                        ctx,
-                        &json!({
-                            "dryRun": true,
-                            "action": action,
-                            "deleted": false,
-                            "id": args.attachment,
-                        }),
-                    );
-                }
-                other => {
-                    maybe_print_kv_fmt(
-                        ctx,
-                        other,
-                        vec![
-                            vec!["DryRun".to_string(), "true".to_string()],
-                            vec!["Action".to_string(), action.to_string()],
-                            vec!["Deleted".to_string(), "false".to_string()],
-                            vec!["ID".to_string(), args.attachment],
-                        ],
-                    );
-                    return Ok(());
-                }
-            }
-        }
-
-        print_line(
+        return print_write_action_result(
             ctx,
+            args.output,
             &format!("Would {action} attachment {}", args.attachment),
+            &json!({
+                "dryRun": true,
+                "action": action,
+                "deleted": false,
+                "id": args.attachment,
+            }),
+            vec![
+                vec!["DryRun".to_string(), "true".to_string()],
+                vec!["Action".to_string(), action.to_string()],
+                vec!["Deleted".to_string(), "false".to_string()],
+                vec!["ID".to_string(), args.attachment.clone()],
+            ],
         );
-        return Ok(());
     }
 
     if !args.yes {
@@ -318,32 +301,20 @@ async fn attachment_delete(
     }
     client.delete(url).await?;
 
-    if let Some(fmt) = args.output {
-        match fmt {
-            OutputFormat::Json => maybe_print_json(
-                ctx,
-                &json!({
-                    "action": action,
-                    "deleted": true,
-                    "id": args.attachment,
-                }),
-            ),
-            other => {
-                maybe_print_kv_fmt(
-                    ctx,
-                    other,
-                    vec![
-                        vec!["Action".to_string(), action.to_string()],
-                        vec!["Deleted".to_string(), "true".to_string()],
-                        vec!["ID".to_string(), args.attachment],
-                    ],
-                );
-                Ok(())
-            }
-        }
-    } else {
-        let past = if args.purge { "Purged" } else { "Deleted" };
-        print_line(ctx, &format!("{past} attachment {}", args.attachment));
-        Ok(())
-    }
+    let past = if args.purge { "Purged" } else { "Deleted" };
+    print_write_action_result(
+        ctx,
+        args.output,
+        &format!("{past} attachment {}", args.attachment),
+        &json!({
+            "action": action,
+            "deleted": true,
+            "id": args.attachment,
+        }),
+        vec![
+            vec!["Action".to_string(), action.to_string()],
+            vec!["Deleted".to_string(), "true".to_string()],
+            vec!["ID".to_string(), args.attachment],
+        ],
+    )
 }
