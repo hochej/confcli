@@ -5,7 +5,7 @@
 #
 # Options (via env vars — set them on the `sh` side of the pipe):
 #   curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | INSTALL_DIR=~/.local/bin sh
-#   curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | VERSION=0.2.3 sh
+#   curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | VERSION=<latest> sh
 #
 # Env vars:
 #   INSTALL_DIR      — where to put the binary (default: /usr/local/bin or ~/.local/bin)

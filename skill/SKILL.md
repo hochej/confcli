@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | sh
 To install a specific version or to a custom directory:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | VERSION=0.2.3 sh
+curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | VERSION=<latest> sh
 curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | INSTALL_DIR=~/.bin sh
 ```
 

@@ -21,7 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | sh
 Options via environment variables (these vars must be set on the `sh` side of the pipe):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | VERSION=0.2.3 sh
+curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | VERSION=<latest> sh
 curl -fsSL https://raw.githubusercontent.com/hochej/confcli/main/install.sh | INSTALL_DIR=~/.bin sh
 ```
 
