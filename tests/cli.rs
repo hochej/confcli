@@ -88,6 +88,15 @@ fn label_help() {
 }
 
 #[test]
+fn label_pages_supports_all_flag() {
+    confcli()
+        .args(["label", "pages", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--all"));
+}
+
+#[test]
 fn completions_bash() {
     confcli()
         .args(["completions", "bash"])
@@ -283,6 +292,16 @@ fn attachment_upload_accepts_multiple_files() {
         .assert()
         .success()
         .stdout(predicate::str::contains("File(s) to upload"));
+}
+
+#[test]
+#[cfg(feature = "write")]
+fn attachment_upload_supports_concurrency_flag() {
+    confcli()
+        .args(["attachment", "upload", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--concurrency"));
 }
 
 #[test]
